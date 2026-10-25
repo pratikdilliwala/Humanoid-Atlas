@@ -1,3 +1,5 @@
 .vercel
 .env*
 node_modules
+desktop/dist
+desktop/icon.ico

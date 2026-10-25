@@ -1,0 +1,35 @@
+{
+  "name": "atlas-desktop",
+  "productName": "Atlas",
+  "version": "0.2.0",
+  "description": "Atlas, the humanoid made of light, as a desktop companion that talks in real time and works on your PC.",
+  "author": "Pratik Dilliwala",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "shortcut": "node shortcut.js",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --win dir"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.pratikdilliwala.atlas",
+    "productName": "Atlas",
+    "directories": { "output": "dist" },
+    "files": ["*.js", "!shortcut.js", "!dist/**"],
+    "extraResources": [
+      { "from": "../index.html", "to": "web/index.html" },
+      { "from": "../api", "to": "web/api" },
+      { "from": "icon.png", "to": "icon.png" }
+    ],
+    "win": { "target": "nsis", "icon": "icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "Atlas" }
+  }
+}

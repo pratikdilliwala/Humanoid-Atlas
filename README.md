@@ -70,6 +70,30 @@ vercel dev           # http://localhost:3000
 
 For the visuals only (browser voice, built-in answers): `npx serve .`
 
+## Desktop app (Windows)
+
+The `desktop/` folder turns Atlas into an app that lives on your desktop:
+
+- **Floats over your desktop.** A see-through, always-on-top companion in the corner (clicks pass through it), or a full-scene window. Tray icon, `Ctrl+Shift+Space` from anywhere, optional start with Windows.
+- **Talks in real time.** Gemini Live streams your voice in and his voice out, so replies start almost at once and you can interrupt him mid-sentence. Google Search gives him live answers.
+- **Works on your PC.** Open apps, websites, files and folders; find and read files; write notes; clipboard; music and volume; reminders; weather; your calendar (iCal link); look at your screen; wallpaper and dark/light mode; PowerShell. Anything that changes your PC, reads outside your own folders, runs a program or looks at your screen shows a Windows dialog first. Nothing is deleted permanently.
+- **Has his own brain.** Plain files in `%APPDATA%\Atlas\brain`: `memory.md` (what he knows about you, which you can edit), a daily journal of conversations, actions and the app/window you were in, a digest of each day, and the routines he has learned. He saves facts as you talk, learns more from each day's journal, briefs you on your first wake of the day (weather, calendar, what you worked on last time), and offers to open apps you usually open at that time.
+- **Matches your setup.** The valley follows the time of day; his light takes the colour of your wallpaper.
+
+```bash
+cd desktop
+npm install
+npm start            # run it
+npm run dist         # build desktop/dist/Atlas Setup 0.2.0.exe
+npm run shortcut     # or: add Atlas to the desktop and Start menu without installing
+```
+
+If **Smart App Control** is on (Windows Security → App & browser control), Windows blocks unsigned apps, including this installer. Use `npm run shortcut` instead: it launches Atlas through Electron's own signed runtime, and everything else works the same.
+
+On first start, paste a free [Gemini API key](https://aistudio.google.com/apikey) into Settings. It is encrypted on your PC with Windows data protection, and only Atlas's own process uses it. Turn "Learn from what I do" off from the tray or Settings at any time. The journal never leaves your PC except when Gemini writes each day's digest and saves facts from it.
+
+> The installer isn't code-signed, so Windows SmartScreen will warn on first run (*More info → Run anyway*). It contains no keys: each person pastes their own in Settings.
+
 ## How it's built
 
 ```

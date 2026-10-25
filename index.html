@@ -73,6 +73,29 @@ button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,#msg:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){#mic.on::after{animation:none}}
 @media (max-width:420px){.line{font-size:15px}.cam{width:72px}}
+/* desktop app: settings panel, and the see-through companion window that floats over the desktop */
+#setup{position:fixed;inset:12px;z-index:5;max-width:460px;margin:0 auto;overflow:auto;padding:18px;background:rgba(5,10,20,.96);border:1px solid var(--rule);display:flex;flex-direction:column;gap:12px;font-family:var(--f-hud);font-size:12px;letter-spacing:.03em}
+#setup h2{margin:0;font-family:var(--f-ui);font-weight:600;font-size:18px;letter-spacing:.24em;text-transform:uppercase}
+#setup p{margin:0;color:var(--dim);line-height:1.5}
+#setup label{display:flex;flex-direction:column;gap:5px;color:var(--ink)}
+#setup label.chk{flex-direction:row;align-items:flex-start;gap:8px;line-height:1.4}
+#setup input:not([type=checkbox]),#setup select{font:inherit;font-size:13px;color:var(--ink);background:rgba(10,20,38,.9);border:1px solid var(--rule);padding:9px 10px;outline:none;min-width:0}
+#setup input:focus,#setup select:focus{border-color:var(--blue)}
+#setup .row{display:flex;gap:8px}
+#setup .row button{flex:1;font-family:var(--f-ui);font-weight:600;letter-spacing:.2em;text-transform:uppercase;font-size:13px;padding:11px;background:transparent;border:1px solid var(--rule)}
+#setup .row button[type=submit]{border-color:var(--blue);background:rgba(61,155,255,.12)}
+#hideBtn{display:none}
+html.companion,html.companion body{background:transparent}
+html.companion .dock{background:none;padding-bottom:12px;gap:8px}
+html.companion .line{font-size:15px;text-shadow:0 0 8px #000,0 0 3px #000,0 0 1px #000}
+html.companion #track,html.companion #voiceName{display:none}
+html.companion .cam{position:fixed;width:2px;height:2px;opacity:0;margin:0}
+html.companion .brand{pointer-events:auto;-webkit-app-region:drag;cursor:move;text-shadow:0 0 6px #000}
+html.companion #hideBtn{display:block;pointer-events:auto;width:26px;height:26px;padding:0;border:1px solid var(--rule);background:rgba(5,10,20,.7);color:var(--dim);font-size:15px;line-height:1}
+html.companion #wakeRow small{text-shadow:0 0 6px #000;background:rgba(3,6,13,.7);padding:6px 10px}
+html.companion #wake{background:rgba(3,6,13,.85)}
+html.companion .lines{background:rgba(3,6,13,.55);padding:6px 10px;border-radius:2px}
+html.companion .lines:has(.line:empty + .line:empty){background:none}
 </style>
 
 <canvas id="stage" aria-label="Atlas, a humanoid figure made of light that turns to follow you"></canvas>
@@ -82,6 +105,7 @@ button:focus-visible,#msg:focus-visible{outline:2px solid var(--ember);outline-o
   <div class="cam" id="camWrap" hidden><video id="cam" playsinline muted></video><i id="ret"></i></div>
 </div>
 <div class="hud tr">
+  <button id="hideBtn" type="button" aria-label="Hide Atlas to the tray" title="Hide to tray">×</button>
   <div id="status">Status: assembling… 0%</div>
   <div id="track">Track: pointer</div>
   <div id="voiceName"></div>
@@ -105,20 +129,44 @@ button:focus-visible,#msg:focus-visible{outline:2px solid var(--ember);outline-o
   </form>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/Pass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<form id="setup" hidden autocomplete="off">
+  <h2>Atlas settings</h2>
+  <p id="setupNote">Keys are stored encrypted on this PC and used only by the Atlas app itself, never by the page.</p>
+  <label>Gemini API key <input id="sGemini" type="password" placeholder="From aistudio.google.com/apikey"></label>
+  <label>ElevenLabs API key (optional, used only when real-time voice is unavailable) <input id="sEleven" type="password"></label>
+  <label>ElevenLabs voice ID (optional) <input id="sElevenVoice" placeholder="Empty: Brian, a public ElevenLabs voice"></label>
+  <label>Voice
+    <select id="sVoice">
+      <option>Charon</option><option>Orus</option><option>Fenrir</option><option>Algenib</option><option>Iapetus</option><option>Puck</option><option>Kore</option><option>Aoede</option><option>Zephyr</option>
+    </select>
+  </label>
+  <label>Home city, for weather <input id="sCity" placeholder="e.g. Pune"></label>
+  <label>Calendar iCal address (optional) <input id="sCal" type="url" placeholder="Google Calendar → Settings → Secret address in iCal format"></label>
+  <label class="chk"><input type="checkbox" id="sLearn"> Learn from what I do: apps and window titles, conversations and actions, kept in files on this PC</label>
+  <label class="chk"><input type="checkbox" id="sWake"> Wake up and brief me when Atlas starts</label>
+  <label class="chk"><input type="checkbox" id="sAuto"> Start with Windows</label>
+  <div class="row"><button type="submit">Save</button><button type="button" id="sClose">Close</button></div>
+</form>
+
+<!-- integrity hashes: the browser refuses these files if the CDN ever serves anything else -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js" integrity="sha384-vV17nr/rMaJqmeZkFUzXLpHdQ+ME5QHKdydaqqN+3Ga39RJlNrTatJxHwGV4ml2C" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js" integrity="sha384-jEqYdJwVhbnk5LMD7OzkM7Zn+m7ziM3b+VsGVfa/5BJobkk7Y0Gv8UWSFMs6lww0" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js" integrity="sha384-pemnF+L/kioV52+hCxIKwYFCATMpS1eg1Jsq8tKbIwG9j4G3v6v1OpEuBnwFDfHe" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/Pass.js" integrity="sha384-11pRT4S4he8Ak3CRNRJ2QbM4OuAKNUuCpFybASSIYQXrpfylefuD6xO9+z2Jkn9e" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js" integrity="sha384-R0mna39OFXOi0vozEMV5F7tgsuOL4JYlJA1zMRSF/G36T6DdB9tLl4u4sGx195Te" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js" integrity="sha384-MvqV+yMfQqfT4GMD7NmeHbAcLhOaki0I2139ZAxe6+VyME2ys9TLRrRTsFtBJK21" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js" integrity="sha384-ZiGZOW8SNIUe2yogdaaTRbEdiEpMlAIx9hL5bw50EwSpa4fbthhT67TiAHlC9x5U" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js" integrity="sha384-EYOqTmLl8GhcXCeuHZ88cRp7inJaG/+pOg9hPG2GjQp535CVdHPNqMDbJMBbOypa" crossorigin="anonymous"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const cv = $('stage');
 const video = $('cam');
 const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// the desktop app (desktop/preload.js) adds window.atlas; companion mode is a see-through window over the desktop
+const DESK = window.atlas || null;
+const COMPANION = !!DESK && DESK.mode === 'companion';
+if (COMPANION) document.documentElement.classList.add('companion');
 const clamp = (v,a=0,b=1) => v<a?a:v>b?b:v;
 const gs = (a,b) => Math.exp(-(a/b)*(a/b));
 const sstep = (a,b,x) => { const t = clamp((x-a)/(b-a)); return t*t*(3-2*t); };
@@ -158,13 +206,13 @@ const N1 = makeNoise(7), N2 = makeNoise(19);
 /* ---------- renderer ---------- */
 let renderer = null;
 try {
-  renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'high-performance', alpha: COMPANION });
 } catch(e){
   $('status').textContent = 'Status: this browser cannot run WebGL';
 }
 const PR = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 1.75);
 renderer.setPixelRatio(PR);
-renderer.setClearColor(0x010206, 1);
+renderer.setClearColor(0x010206, COMPANION ? 0 : 1);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 400);
 const TANV = Math.tan(17.5*Math.PI/180);
@@ -178,19 +226,20 @@ const add = { blending: THREE.AdditiveBlending, transparent: true, depthWrite: f
 const addD = { ...add, depthTest: true };
 
 /* ---------- backdrop: near-black with a faint blue bloom behind the head ---------- */
-const skyU = { uRes:{value:new THREE.Vector2(1,1)}, uHead:{value:new THREE.Vector2(0.5,0.6)}, uWake:{value:0} };
+const skyU = { uRes:{value:new THREE.Vector2(1,1)}, uHead:{value:new THREE.Vector2(0.5,0.6)}, uWake:{value:0},
+  uSkyA:{value:new THREE.Vector3(0.004,0.008,0.022)}, uSkyB:{value:new THREE.Vector3(0.015,0.04,0.11)} };
 const sky = new THREE.Mesh(new THREE.PlaneGeometry(2,2), new THREE.ShaderMaterial({
   uniforms: skyU, depthTest:false, depthWrite:false,
   vertexShader: `void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-  fragmentShader: `uniform vec2 uRes; uniform vec2 uHead; uniform float uWake;
+  fragmentShader: `uniform vec2 uRes; uniform vec2 uHead; uniform float uWake; uniform vec3 uSkyA; uniform vec3 uSkyB;
   void main(){
     vec2 uv = gl_FragCoord.xy/uRes; vec2 d = uv - uHead; d.x *= uRes.x/uRes.y;
     float r = length(d);
-    vec3 col = vec3(0.004,0.008,0.022) + vec3(0.015,0.04,0.11)*exp(-r*r*5.0)*(0.6 + 0.4*uWake);
+    vec3 col = uSkyA + uSkyB*exp(-r*r*5.0)*(0.6 + 0.4*uWake);
     gl_FragColor = vec4(col, 1.0);
   }`
 }));
-sky.frustumCulled = false; sky.renderOrder = -10;
+sky.frustumCulled = false; sky.renderOrder = -10; sky.visible = !COMPANION;
 scene.add(sky);
 
 /* ---------- particle mountains: dotted ranges with bright ridgelines and orange energy veins ---------- */
@@ -235,10 +284,12 @@ function terrainH(x, z){
   const h = Math.max(best, foot) + 0.12*Math.min(best, foot);
   return [h, n0, Math.max(bestH, 1.0)];
 }
-const mtU = { uTime:{value:0}, uPx:{value:PR*2.7}, uReveal:{value:0}, uCam:{value:9}, uD0:{value:5}, uD1:{value:57} };
+const mtU = { uTime:{value:0}, uPx:{value:PR*2.7}, uReveal:{value:0}, uCam:{value:9}, uD0:{value:5}, uD1:{value:57},
+  uTint:{value:new THREE.Vector3(0.3,0.55,1.0)}, uTintAmt:{value:0} };
 const mtMat = new THREE.ShaderMaterial({ uniforms: mtU, ...addD,
   vertexShader: `attribute vec3 aCol; attribute float aSize; attribute float aPh; attribute float aGlow;
     uniform float uTime; uniform float uPx; uniform float uReveal; uniform float uCam; uniform float uD0; uniform float uD1;
+    uniform vec3 uTint; uniform float uTintAmt;
     varying vec3 vCol; varying float vA;
     void main(){ vec3 p = position;
       float k = clamp((uCam - p.z - uD0)/(uD1 - uD0), 0.0, 1.0);
@@ -247,7 +298,10 @@ const mtMat = new THREE.ShaderMaterial({ uniforms: mtU, ...addD,
       vec4 mv = modelViewMatrix*vec4(p, 1.0); float d = -mv.z;
       float tw = 0.75 + 0.25*sin(uTime*(1.0 + aPh*3.0) + aPh*50.0);
       float fl = aGlow > 0.5 ? 0.45 + 0.75*abs(sin(uTime*1.8 + aPh*20.0 - p.y*3.0)) : tw;
-      vCol = aCol*fl; vA = (1.0 - 0.35*k)*g*g;
+      // time of day and wallpaper recolour the blue dots; the orange veins keep their colour
+      vec3 base = aCol;
+      if (aGlow < 0.5){ float l = dot(aCol, vec3(0.25,0.35,0.4)); base = mix(aCol, uTint*l*1.7 + max(aCol - vec3(0.7), 0.0), uTintAmt); }
+      vCol = base*fl; vA = (1.0 - 0.35*k)*g*g;
       gl_PointSize = max(1.0, uPx*aSize*(10.0/d)); gl_Position = projectionMatrix*mv; }`,
   fragmentShader: DOT_FRAG });
 let terrain = null, terrAspect = 0;
@@ -434,9 +488,10 @@ for (let i=0;i<(MOBILE?2500:4500);i++){
   addV(torso, w*sn, y, -0.05+d*c, sn/w, (1-s)*0.9, c/d, 0,0, af*0.7);
 }
 
-const figU = { uTime:{value:0}, uAsm:{value:0}, uAmp:{value:0}, uPx:{value:PR*1.6}, uLine:{value:0} };
+const figU = { uTime:{value:0}, uAsm:{value:0}, uAmp:{value:0}, uPx:{value:PR*1.6}, uLine:{value:0},
+  uCool:{value:new THREE.Vector3(0.16,0.5,1.0)}, uRim:{value:new THREE.Vector3(0.6,0.92,1.0)}, uEdge:{value:new THREE.Vector3(0.3,0.8,1.0)} };
 const FIG_VERT = `attribute vec3 aStart; attribute vec3 aNorm; attribute float aDelay; attribute float aFace; attribute float aMouth; attribute float aSeed; attribute float aFade;
-  uniform float uTime; uniform float uAsm; uniform float uAmp; uniform float uPx; uniform float uLine;
+  uniform float uTime; uniform float uAsm; uniform float uAmp; uniform float uPx; uniform float uLine; uniform vec3 uCool; uniform vec3 uRim;
   varying vec3 vCol; varying float vA;
   void main(){
     float e = clamp((uAsm - aDelay)/1.5, 0.0, 1.0); e = 1.0 - pow(1.0-e, 3.0);
@@ -456,7 +511,7 @@ const FIG_VERT = `attribute vec3 aStart; attribute vec3 aNorm; attribute float a
     float br = max(front, rim*1.5);
     float fc = aFace*smoothstep(0.0, 0.35, nz);
     float heat = smoothstep(0.08, 0.5, fc*(1.0 + 0.6*uAmp));
-    vec3 col = mix(vec3(0.16,0.5,1.0), vec3(0.6,0.92,1.0), rim);
+    vec3 col = mix(uCool, uRim, rim);
     col = mix(col, vec3(1.0,0.55,0.13), heat);
     float boost = 1.0 + heat*(1.6 + 1.6*uAmp);
     vCol = col;
@@ -477,10 +532,10 @@ const shellMat = new THREE.ShaderMaterial({ uniforms: figU, side: THREE.DoubleSi
   vertexShader: `varying vec3 vN; varying vec3 vV; varying float vY;
     void main(){ vec4 mv = modelViewMatrix*vec4(position, 1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz);
       vY = (modelMatrix*vec4(position,1.0)).y; gl_Position = projectionMatrix*mv; }`,
-  fragmentShader: `uniform float uLine; varying vec3 vN; varying vec3 vV; varying float vY;
+  fragmentShader: `uniform float uLine; uniform vec3 uEdge; varying vec3 vN; varying vec3 vV; varying float vY;
     void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
       float edge = pow(f, 5.0)*smoothstep(-2.45, -1.95, vY);
-      vec3 col = vec3(0.004,0.012,0.035) + vec3(0.3,0.8,1.0)*edge*2.4*uLine;
+      vec3 col = vec3(0.004,0.012,0.035) + uEdge*edge*2.4*uLine;
       gl_FragColor = vec4(col, 1.0); }` });
 function shellPart(P, group, upTo, cap){
   const pos = [], idx = [], src = P.pos, rings = P.rings;
@@ -632,21 +687,57 @@ for (let i=0;i<8;i++){
 }
 let ringAmt = 0;
 
+/* ---------- mood: the valley follows the time of day; the light follows your wallpaper (desktop app) ---------- */
+// [hour, sky base, sky glow, mountain tint, tint amount]
+const NIGHT = [[0.004,0.008,0.022],[0.015,0.04,0.11],[0.3,0.55,1.0],0];
+const MOODS = [[0,...NIGHT],[5,...NIGHT],
+  [6.5,[0.03,0.012,0.03],[0.13,0.05,0.09],[1.0,0.6,0.7],0.5],
+  [9,[0.01,0.025,0.06],[0.05,0.12,0.24],[0.5,0.8,1.0],0.35],
+  [16,[0.01,0.025,0.06],[0.05,0.12,0.24],[0.5,0.8,1.0],0.35],
+  [18.5,[0.03,0.008,0.016],[0.17,0.06,0.04],[1.0,0.5,0.3],0.55],
+  [20.5,...NIGHT],[24,...NIGHT]];
+let accent = null;
+const mixA = (a, b, k) => a.map((v, i) => v + (b[i] - v)*k);
+function applyMood(){
+  const d = new Date(), h = d.getHours() + d.getMinutes()/60;
+  let i = 0; while (i < MOODS.length - 2 && MOODS[i+1][0] <= h) i++;
+  const m0 = MOODS[i], m1 = MOODS[i+1], k = sstep(0, 1, (h - m0[0])/(m1[0] - m0[0]));
+  skyU.uSkyA.value.fromArray(mixA(m0[1], m1[1], k));
+  skyU.uSkyB.value.fromArray(mixA(m0[2], m1[2], k));
+  let tint = mixA(m0[3], m1[3], k), amt = m0[4] + (m1[4] - m0[4])*k;
+  if (accent){ tint = mixA(tint, accent, 0.5); amt = Math.max(amt, 0.35); }
+  mtU.uTint.value.fromArray(tint); mtU.uTintAmt.value = amt;
+  const a = accent || [0.16,0.5,1.0];
+  figU.uCool.value.fromArray(a);
+  figU.uRim.value.fromArray(accent ? mixA(accent, [1,1,1], 0.55) : [0.6,0.92,1.0]);
+  figU.uEdge.value.fromArray(accent ? mixA(accent, [1,1,1], 0.3) : [0.3,0.8,1.0]);
+  const ring = accent ? mixA(accent, [1,1,1], 0.45) : [0.486,0.769,1.0];
+  ringMats.forEach(m => m.color.setRGB(...ring));
+}
+applyMood();
+setInterval(applyMood, 30000);
+
 /* ---------- post-processing ---------- */
 const composer = new THREE.EffectComposer(renderer);
 composer.addPass(new THREE.RenderPass(scene, camera));
 const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 1.05, 0.5, 0.22);
 composer.addPass(bloom);
+// in companion mode the light itself becomes the alpha, so the desktop shows through everywhere else
 const finish = new THREE.ShaderPass({
-  uniforms: { tDiffuse:{value:null}, uTime:{value:0} },
+  uniforms: { tDiffuse:{value:null}, uTime:{value:0}, uClear:{value:COMPANION ? 1 : 0} },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform float uClear; varying vec2 vUv;
     void main(){ vec2 c = vUv - 0.5; float r = dot(c,c); vec2 off = c*r*0.01;
       vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
-      col *= 1.0 - 0.45*r*2.0;
+      col *= 1.0 - 0.45*r*2.0*(1.0 - uClear);
       float g = fract(sin(dot(vUv*vec2(1271.3,311.7) + fract(uTime)*91.0, vec2(12.9898,78.233)))*43758.5453);
-      col += (g - 0.5)*0.02;
-      gl_FragColor = vec4(col, 1.0); }`
+      col += (g - 0.5)*0.02*(1.0 - uClear);
+      col = max(col, 0.0);
+      // a soft dark aura behind the figure keeps him readable over bright windows
+      vec2 q = (vUv - vec2(0.5, 0.5))/vec2(0.6, 0.62);
+      float aura = 0.7*(1.0 - smoothstep(0.3, 1.0, length(q)));
+      float a = mix(1.0, max(aura, clamp(max(col.r, max(col.g, col.b))*1.6, 0.0, 1.0)), uClear);
+      gl_FragColor = vec4(col, a); }`
 });
 composer.addPass(finish);
 
@@ -662,7 +753,7 @@ function resize(){
   camDist = Math.max(8.4, 1.72/(TANV*camera.aspect));
   camera.updateProjectionMatrix();
   skyU.uRes.value.set(W*PR, H*PR);
-  if (!terrain || Math.abs(W/H - terrAspect)/terrAspect > 0.3){
+  if (!COMPANION && (!terrain || Math.abs(W/H - terrAspect)/terrAspect > 0.3)){
     clearTimeout(resizeTO);
     if (!terrain) buildTerrain(); else resizeTO = setTimeout(buildTerrain, 300);
   }
@@ -728,7 +819,7 @@ let shownStatus = '';
 function hudTick(){
   let s;
   if (!REDUCE && T < ASM_END) s = 'Status: assembling… ' + Math.round(clamp(T/ASM_END)*100) + '%';
-  else s = 'Status: ' + (statusTxt || (awake ? 'listening' : 'standby'));
+  else s = 'Status: ' + (statusTxt || (!awake ? 'standby' : DESK && !listenOn ? 'mic off' : 'listening'));
   if (s !== shownStatus){ statusEl.textContent = s; statusEl.classList.toggle('hot', /speaking|thinking/.test(s)); shownStatus = s; }
 }
 
@@ -742,7 +833,7 @@ function aimAt(cx, cy, fromCam){
   if (fromCam){ ret.style.left = ((1-cx)*100)+'%'; ret.style.top = (cy*100)+'%'; ret.classList.add('on'); }
 }
 addEventListener('pointermove', e => {
-  if (performance.now() - faceT < 1500) return;
+  if (COMPANION || performance.now() - faceT < 1500) return;
   tYaw = clamp((e.clientX/W - 0.5)*0.85, -0.45, 0.45);
   tPitch = clamp((e.clientY/H - 0.42)*0.5, -0.22, 0.25);
   lastInput = performance.now();
@@ -792,12 +883,12 @@ function trackStep(now){
       if (d){
         const bb = d.boundingBox, vw = video.videoWidth, vh = video.videoHeight;
         aimAt((bb.originX + bb.width/2)/vw, (bb.originY + bb.height/2)/vh, true);
-        if (awake && hadFace === false && now - faceT > 5000 && faceT > 0 && !speaking && now - lastRemark > 15000){ lastRemark = now; say(pick(['There you are.','Ah. Welcome back.','I see you again.'])); }
+        if (awake && live.state !== 'ready' && hadFace === false && now - faceT > 5000 && faceT > 0 && !speaking && now - lastRemark > 15000){ lastRemark = now; say(pick(['There you are.','Ah. Welcome back.','I see you again.'])); }
         faceT = now; hadFace = true; faceGoneSaid = false;
       } else {
         ret.classList.remove('on');
         if (hadFace && now - faceT > 1200) hadFace = false;
-        if (awake && !faceGoneSaid && faceT > 0 && now - faceT > 7000 && !speaking && !thinking && now - lastRemark > 15000){ faceGoneSaid = true; lastRemark = now; say('Where did you go?'); }
+        if (awake && live.state !== 'ready' && !faceGoneSaid && faceT > 0 && now - faceT > 7000 && !speaking && !thinking && now - lastRemark > 15000){ faceGoneSaid = true; lastRemark = now; say('Where did you go?'); }
       }
     } catch(e){}
   } else if (mode === 'motion' && now - lastDet > 50){ lastDet = now; motionStep(); }
@@ -837,6 +928,14 @@ function cloudAmp(){
   return clamp(Math.sqrt(s/ampBuf.length)*5.5);
 }
 async function cloudSpeak(text){
+  if (DESK && cloudVoice && actx){
+    try {
+      const r = await DESK.speak(text);
+      if (r.audio) return await new Promise((ok, no) => actx.decodeAudioData(r.audio.slice().buffer, ok, no));
+      if ([401, 402, 403, 404, 503].includes(r.status) || (r.json && r.json.permanent)) cloudVoice = false;
+    } catch(e){}
+    return null;
+  }
   if (!cloudVoice || !actx || !/^https?:$/.test(location.protocol) || (window.claude && typeof window.claude.use === 'function')) return null;
   try {
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
@@ -886,8 +985,72 @@ function say(text){
   });
 }
 
+/* ---------- real-time voice (desktop app): mic → Gemini Live → spoken audio, with barge-in ---------- */
+const live = { state: 'off', mic: null, mctx: null, playHead: 0, playing: false, nodes: [], idleTO: 0 };
+// resamples the mic to 16 kHz 16-bit PCM in 100 ms chunks
+const CAP = `class Cap extends AudioWorkletProcessor{
+  constructor(){ super(); this.step = sampleRate/16000; this.pos = 0; this.s = 0; this.m = 0; this.b = new Int16Array(1600); this.n = 0; }
+  process(inp){ const c = inp[0] && inp[0][0]; if (c){ for (let k=0;k<c.length;k++){ this.s += c[k]; this.m++; this.pos += 1;
+    if (this.pos >= this.step){ this.pos -= this.step; const v = Math.max(-1, Math.min(1, this.s/this.m)); this.s = 0; this.m = 0;
+      this.b[this.n++] = v < 0 ? v*32768 : v*32767;
+      if (this.n === this.b.length){ this.port.postMessage(this.b); this.b = new Int16Array(1600); this.n = 0; } } } }
+    return true; } }
+registerProcessor('cap', Cap);`;
+async function micOn(){
+  if (!DESK || live.mic) return;
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    const ctx = new AudioContext();
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([CAP], { type: 'text/javascript' })));
+    const node = new AudioWorkletNode(ctx, 'cap');
+    node.port.onmessage = e => { if (live.state === 'ready' && listenOn) DESK.liveAudio(new Uint8Array(e.data.buffer)); };
+    ctx.createMediaStreamSource(st).connect(node); node.connect(ctx.destination);
+    live.mic = st; live.mctx = ctx;
+  } catch(e){
+    listenOn = false; micUI(); heardEl.textContent = 'Microphone is blocked. Type to Atlas instead.';
+  }
+}
+function micOff(){
+  if (live.mic){ live.mic.getTracks().forEach(t => t.stop()); live.mic = null; }
+  if (live.mctx){ live.mctx.close().catch(() => {}); live.mctx = null; }
+}
+function playChunk(b64){
+  unlockAudio(); if (!actx) return;
+  const bin = atob(b64), n = bin.length >> 1, buf = actx.createBuffer(1, n, 24000), ch = buf.getChannelData(0);
+  for (let i=0;i<n;i++){ let v = bin.charCodeAt(2*i) | (bin.charCodeAt(2*i+1) << 8); if (v >= 32768) v -= 65536; ch[i] = v/32768; }
+  const s = actx.createBufferSource(); s.buffer = buf; s.connect(analyser);
+  const t = Math.max(actx.currentTime + 0.05, live.playHead); s.start(t); live.playHead = t + buf.duration;
+  live.nodes.push(s); s.onended = () => { live.nodes = live.nodes.filter(x => x !== s); };
+  if (!live.playing){ live.playing = true; speaking = true; usingCloud = true; thinking = false; setStatus('speaking'); }
+}
+function stopPlayback(){
+  for (const s of live.nodes){ try { s.onended = null; s.stop(); } catch(e){} }
+  live.nodes = []; live.playHead = 0;
+}
+function liveTick(){
+  if (live.playing && actx && actx.currentTime > live.playHead + 0.15){ live.playing = false; speaking = false; usingCloud = false; setStatus(''); }
+}
+if (DESK){
+  DESK.on('live:state', s => {
+    live.state = s.state;
+    if (s.state === 'connecting') setStatus('connecting');
+    else if (s.state === 'ready'){ setStatus(''); if (listenOn) micOn(); }
+    else if (s.state === 'nokey'){ setStatus(''); openSetup('Add your Gemini API key to give Atlas his real-time voice and brain.'); }
+    else if (s.state === 'error'){ setStatus(''); thinking = false; heardEl.textContent = s.detail + ' Atlas will answer in basic mode for now.'; }
+    else setStatus('');
+  });
+  DESK.on('live:audio', playChunk);
+  DESK.on('live:heard', t => { heardEl.textContent = t; });
+  DESK.on('live:said', t => { saidEl.textContent = t; });
+  DESK.on('live:interrupted', () => { stopPlayback(); });
+  DESK.on('tool', t => { thinking = !!t; setStatus(t ? t.label : ''); });
+  DESK.on('asking', on => setStatus(on ? 'waiting for you' : ''));
+  DESK.on('say', t => say(t));
+}
+
 /* ---------- voice in ---------- */
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// the browser's speech recognition doesn't work inside the desktop app; it uses the real-time voice above instead
+const SR = DESK ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
 let rec = null, listenOn = false, recActive = false;
 const micBtn = $('mic');
 function micUI(){ micBtn.classList.toggle('on', listenOn); micBtn.setAttribute('aria-pressed', String(listenOn)); }
@@ -911,8 +1074,14 @@ function startRec(){
   } catch(e){ recActive = false; }
 }
 function stopRec(){ if (rec && recActive){ try{ rec.abort(); }catch(e){} } recActive = false; }
-micBtn.addEventListener('click', () => { listenOn = !listenOn; micUI(); if (listenOn) startRec(); else stopRec(); });
-if (!SR) micBtn.hidden = true;
+micBtn.addEventListener('click', () => { listenOn = !listenOn; micUI(); if (DESK) deskMic(); else if (listenOn) startRec(); else stopRec(); });
+// mic off for two minutes ends the live session, which saves free-tier quota; the mic or a typed message reopens it
+function deskMic(){
+  clearTimeout(live.idleTO);
+  if (listenOn){ micOn(); if (live.state !== 'ready' && live.state !== 'connecting' && deskInfo && deskInfo.hasGemini) DESK.liveStart(); }
+  else { micOff(); live.idleTO = setTimeout(() => { if (!listenOn) DESK.liveStop(); }, 120000); }
+}
+if (!SR && !DESK) micBtn.hidden = true;
 
 /* ---------- brain ---------- */
 const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
@@ -962,23 +1131,33 @@ async function aiReply(text){
     try { const r = await ai(prompt, { modelTier:'quick', cache:false }); return (r.text || '').trim().replace(/^Atlas:\s*/i,'') || null; }
     catch(e){ if (e && (e.code === 'not_granted' || e.code === 'unavailable')) aiOff = true; return null; }
   }
-  if (!/^https?:$/.test(location.protocol)) return null;
+  const body = { text, name: userName, history: hist.map(([w,t]) => ({ role: w==='user' ? 'user' : 'model', text: t })) };
   try {
-    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
-    const res = await fetch('/api/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, signal: ctl.signal,
-      body: JSON.stringify({ text, name: userName, history: hist.map(([w,t]) => ({ role: w==='user' ? 'user' : 'model', text: t })) }) });
-    clearTimeout(to);
-    if (res.status === 404){ aiOff = true; return null; }
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 503 && data.error === 'missing_key'){ heardEl.textContent = 'Add GEMINI_API_KEY in Vercel to give Atlas his brain.'; return null; }
-    if (res.status === 429) return 'I need a short pause. Ask me again in a minute.';
-    return (res.ok && data.reply) ? String(data.reply).trim() : null;
+    let status, data;
+    if (DESK){ const r = await DESK.chat(body); status = r.status; data = r.json || {}; }
+    else {
+      if (!/^https?:$/.test(location.protocol)) return null;
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
+      const res = await fetch('/api/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, signal: ctl.signal, body: JSON.stringify(body) });
+      clearTimeout(to);
+      status = res.status; data = await res.json().catch(() => ({}));
+    }
+    if (status === 404){ aiOff = true; return null; }
+    if (status === 503 && data.error === 'missing_key'){ heardEl.textContent = DESK ? 'Add a Gemini key in Settings to give Atlas his brain.' : 'Add GEMINI_API_KEY in Vercel to give Atlas his brain.'; return null; }
+    if (status === 429) return 'I need a short pause. Ask me again in a minute.';
+    return (status === 200 && data.reply) ? String(data.reply).trim() : null;
   } catch(e){ return null; }
 }
 async function handle(raw){
   const text = (raw || '').trim();
   if (!text) return;
   heardEl.textContent = text;
+  // desktop app: everything goes to the live session (it has the tools and the memory); basic mode only if live failed
+  if (DESK && deskInfo && deskInfo.hasGemini && live.state !== 'error'){
+    saidEl.textContent = ''; thinking = true; setStatus('thinking');
+    DESK.liveText(text);
+    return;
+  }
   let r = null;
   if (awaitingName && !/\?|\b(what|how|who|when|where|why|time|date|joke|help|hi|hello|hey|namaste|yes|no|ok|okay)\b/i.test(text)){
     const n = extractName(text);
@@ -992,6 +1171,7 @@ async function handle(raw){
     if (!r) r = pick(['Interesting. Tell me more.','I heard you. That one is beyond my circuits for now.','Noted. Ask me the time, a joke, or what I can do.','Hmm. Say that another way?']);
   }
   convo.push(['user', text], ['atlas', r]);
+  if (DESK){ DESK.log('heard', text); DESK.log('said', r); if (userName) DESK.setName(userName); }
   say(r);
 }
 $('talk').addEventListener('submit', e => {
@@ -1001,21 +1181,82 @@ $('talk').addEventListener('submit', e => {
 });
 
 /* ---------- wake ---------- */
-$('wake').addEventListener('click', () => {
+function wakeUp(){
+  if (awake) return;
   awake = true; wakeT = T;
   $('wakeRow').hidden = true; $('talk').hidden = false;
   unlockAudio();
   pickVoice();
   startCamera();
+  // desktop app with a key: the live session greets (or briefs) on its own
+  if (DESK && deskInfo && deskInfo.hasGemini){ listenOn = true; micUI(); micOn(); DESK.liveStart(); return; }
+  if (DESK) openSetup('Add your Gemini API key to give Atlas his real-time voice, his tools and his memory.');
   if (SR){ listenOn = true; micUI(); }
   if (userName) say(`Systems online. Welcome back, ${userName}. I can see you.`);
   else { awaitingName = true; say('Systems online. I am Atlas. What should I call you?'); }
-});
+}
+$('wake').addEventListener('click', wakeUp);
+
+/* ---------- desktop app: settings, click-through window, cursor, hotkey, wallpaper colour ---------- */
+let deskInfo = null, through = true;
+const setupEl = $('setup');
+// companion window: clicks pass through to the desktop except over Atlas's own controls
+const setThrough = v => { if (COMPANION && v !== through){ through = v; DESK.ignoreMouse(v); } };
+function openSetup(note){
+  if (!DESK) return;
+  if (note) $('setupNote').textContent = note;
+  const s = (deskInfo && deskInfo.settings) || {};
+  $('sGemini').value = ''; $('sEleven').value = '';
+  $('sGemini').placeholder = deskInfo && deskInfo.hasGemini ? 'Saved. Leave empty to keep it' : 'From aistudio.google.com/apikey';
+  $('sEleven').placeholder = deskInfo && deskInfo.hasEleven ? 'Saved. Leave empty to keep it' : 'Optional';
+  $('sVoice').value = s.voice || 'Charon'; $('sElevenVoice').value = s.elevenVoice || ''; $('sCity').value = s.city || ''; $('sCal').value = s.calendarUrl || '';
+  $('sLearn').checked = !!s.learn; $('sWake').checked = !!s.autoWake; $('sAuto').checked = !!s.autostart;
+  setupEl.hidden = false;
+  setThrough(false);
+}
+function applyInfo(i){
+  deskInfo = i;
+  if (i.name && i.name !== userName){ userName = i.name; store.set('atlas-name', i.name); }
+  if (i.accent){ accent = i.accent; applyMood(); }
+}
+if (DESK){
+  DESK.info().then(i => {
+    applyInfo(i);
+    if (!i.hasGemini) setTimeout(() => openSetup('Welcome. Paste a free Gemini API key to give Atlas his real-time voice, his tools and his memory.'), (REDUCE ? 0 : ASM_END*1000) + 300);
+    else if (i.autoWake) setTimeout(wakeUp, (REDUCE ? 0 : ASM_END*1000) + 300);
+  });
+  setupEl.addEventListener('submit', async e => {
+    e.preventDefault();
+    const hadKey = deskInfo && deskInfo.hasGemini;
+    const i = await DESK.saveSettings({ gemini: $('sGemini').value, eleven: $('sEleven').value, elevenVoice: $('sElevenVoice').value, voice: $('sVoice').value, city: $('sCity').value, calendarUrl: $('sCal').value,
+      learn: $('sLearn').checked, autoWake: $('sWake').checked, autostart: $('sAuto').checked });
+    applyInfo(i); cloudVoice = true; setupEl.hidden = true;
+    if (!hadKey && i.hasGemini){ if (awake){ listenOn = true; micUI(); micOn(); DESK.liveStart(); } else wakeUp(); }
+  });
+  $('sClose').addEventListener('click', () => { setupEl.hidden = true; });
+  $('hideBtn').addEventListener('click', () => DESK.hide());
+  DESK.on('settings', () => openSetup());
+  DESK.on('hotkey', () => { if (!awake) wakeUp(); else micBtn.click(); });
+  DESK.on('memory', p => { if (p && p.Name){ userName = p.Name; store.set('atlas-name', p.Name); } });
+  DESK.on('accent', a => { accent = a; applyMood(); });
+  DESK.on('live:turn', () => { thinking = false; if (!live.playing) setStatus(''); });
+  if (COMPANION){
+    addEventListener('mousemove', e => setThrough(setupEl.hidden && !e.target.closest('button, input, select, label, form, .brand')));
+    document.addEventListener('mouseleave', () => setThrough(setupEl.hidden));
+    // the head follows the mouse anywhere on screen, unless the camera sees a face
+    DESK.on('cursor', v => {
+      if (performance.now() - faceT < 1500) return;
+      tYaw = clamp(v.x*0.6, -0.45, 0.45); tPitch = clamp(v.y*0.45, -0.22, 0.25);
+      lastInput = performance.now();
+    });
+  }
+}
 
 /* ---------- loop ---------- */
 function frame(now){
   const dt = Math.min(0.05, (now-last)/1000); last = now; T += dt;
   trackStep(now);
+  liveTick();
   if (now - lastInput > 3500){ tYaw = 0.08*Math.sin(T*0.25); tPitch = 0.03*Math.sin(T*0.2); }
   const k = 1 - Math.exp(-dt*2.4);
   yaw += (tYaw-yaw)*k; pitch += (tPitch-pitch)*k;
