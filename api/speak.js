@@ -1,6 +1,5 @@
 // Atlas's voice: turns a reply into speech with ElevenLabs. The key stays on the server.
-const VOICE = process.env.ELEVENLABS_VOICE_ID || 'TvCFCBsne35c1ohXselu';
-const MODEL = process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+const DEFAULT_VOICE = 'TvCFCBsne35c1ohXselu';
 const hits = new Map();
 
 function limited(ip){
@@ -14,6 +13,9 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'use_post' });
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(503).json({ error: 'missing_key' });
+  // read per request: the desktop app sets these from each user's own settings
+  const VOICE = process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICE;
+  const MODEL = process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
   const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0] || 'anon';
   if (limited(ip)) return res.status(429).json({ error: 'slow_down' });
 

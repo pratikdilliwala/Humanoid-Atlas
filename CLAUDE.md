@@ -8,6 +8,18 @@ Deployed as a static page plus two serverless functions on Vercel. Screenshots a
 - `api/chat.js` — Vercel serverless function. Sends the conversation to Google Gemini and returns a short spoken reply. Tries the models in `GEMINI_MODEL` (comma-separated) or a built-in list.
 - `api/speak.js` — Vercel serverless function. Turns a reply into speech with ElevenLabs and returns MP3 audio. Voice ID defaults to `TvCFCBsne35c1ohXselu`; override with `ELEVENLABS_VOICE_ID`.
 
+## Desktop app (`desktop/`)
+An Electron app that loads the same `index.html` (it detects `window.atlas` from the preload) and runs on Windows. It isn't deployed to Vercel (`.vercelignore`).
+- `main.js` — windows (see-through always-on-top "companion" or framed "full scene"), tray, global hotkey, autostart, the Gemini Live session, tool permission dialogs, activity watcher, reminders and habit nudges.
+- `preload.js` — the only bridge the page gets (`window.atlas`).
+- `live.js` — Gemini Live WebSocket (16 kHz PCM in, 24 kHz PCM out, transcripts, tool calls, session resumption).
+- `tools.js` — everything Atlas can do on the PC. `risk: 'ask'` tools show a native Windows dialog before acting; nothing deletes permanently.
+- `brain.js` — memory and learning, as files in `%APPDATA%\Atlas\brain`: `memory.md` (user-editable), `journal/DAY.jsonl`, `days/DAY.md` digests, `habits.json`, `reminders.json`.
+- `pc.js` — PowerShell helpers, Start-menu app launch, media keys, wallpaper/theme, foreground-window watcher, wallpaper accent colour.
+- `cloud.js` — Gemini model discovery (live models are picked from the key's model list), one-shot `generate()`, and the web build's `api/*.js` reused for the non-live fallback.
+- `store.js` — settings; API keys encrypted with `safeStorage`. In dev, a repo-root `.env.local` fills in missing keys.
+- Run: `cd desktop`, `npm install`, `npm start`. Installer: `npm run dist` → `desktop/dist/Atlas Setup <version>.exe`.
+
 ## Environment variables (set in Vercel, never in code)
 - `GEMINI_API_KEY` — required for open-ended answers.
 - `ELEVENLABS_API_KEY` — required for the custom voice. Without it Atlas falls back to the browser voice.
@@ -30,3 +42,5 @@ The camera and the API routes need http(s), not file://.
 - Mountains: `buildPeaks()`, `terrainH()`, `buildTerrain()`.
 - Replies: `RULES` (instant answers) and `aiReply()` (Gemini fallback).
 - Voice: `say()`, `cloudSpeak()`, `browserSay()`.
+- Desktop real-time voice: the `live` object, `micOn()` (resampling AudioWorklet), `playChunk()`; desktop wiring after `wakeUp()`.
+- Mood (time of day, wallpaper accent): `MOODS` and `applyMood()`; companion transparency is the `finish` pass (`uClear`).
