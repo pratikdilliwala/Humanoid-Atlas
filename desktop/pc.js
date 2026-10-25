@@ -57,6 +57,8 @@ public class FG {
 }
 '@
 while ($true) {
+  # Atlas is gone (crash, force-quit): stop instead of looping forever
+  if (-not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit }
   $h = [FG]::GetForegroundWindow(); $sb = New-Object System.Text.StringBuilder 512
   [void][FG]::GetWindowText($h, $sb, 512); [uint32]$p = 0; [void][FG]::GetWindowThreadProcessId($h, [ref]$p)
   $n = ''; $d = ''; try { $pr = Get-Process -Id $p -ErrorAction Stop; $n = $pr.ProcessName; $d = $pr.MainModule.FileVersionInfo.FileDescription } catch {}
@@ -64,7 +66,7 @@ while ($true) {
   Start-Sleep -Seconds 30
 }`;
 function watchForeground(onSample){
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc(WATCH)], { windowsHide: true });
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc(`$parent = ${process.pid}\n` + WATCH)], { windowsHide: true });
   let buf = '';
   child.stdout.on('data', d => {
     buf += d; let i;

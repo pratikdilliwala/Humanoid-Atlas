@@ -78,7 +78,12 @@ The `desktop/` folder turns Atlas into an app that lives on your desktop:
 - **Talks in real time.** Gemini Live streams your voice in and his voice out, so replies start almost at once and you can interrupt him mid-sentence. Google Search gives him live answers.
 - **Works on your PC.** Open apps, websites, files and folders; find and read files; write notes; clipboard; music and volume; reminders; weather; your calendar (iCal link); look at your screen; wallpaper and dark/light mode; PowerShell. Anything that changes your PC, reads outside your own folders, runs a program or looks at your screen shows a Windows dialog first. Nothing is deleted permanently.
 - **Has his own brain.** Plain files in `%APPDATA%\Atlas\brain`: `memory.md` (what he knows about you, which you can edit), a daily journal of conversations, actions and the app/window you were in, a digest of each day, and the routines he has learned. He saves facts as you talk, learns more from each day's journal, briefs you on your first wake of the day (weather, calendar, what you worked on last time), and offers to open apps you usually open at that time.
+- **Thinks deeply.** Hard requests (research, comparisons, planning, writing, multi-step PC work) go to Gemini's strongest reasoning model in the background. It searches the web, reads pages, checks your memory and uses the PC tools over several steps, then saves a full note and tells you the result.
+- **Sees you and your screen.** "Look at me" or "what am I holding?" sends one camera photo, and "what's this error?" sends one screenshot, each only after you allow it.
+- **Remembers by meaning.** Recall searches memory, conversations, notes and day and week summaries by meaning, not exact words. Each finished week gets a review, and memory is tidied weekly (with a backup in `memory.bak.md`).
+- **Speaks up on his own.** He tells you about a meeting about to start, offers help when an error has been on screen for 5 minutes, suggests a break after 90 minutes, and offers to open apps you usually open. In calls, or in *Quiet mode* from the tray, these come as notifications only.
 - **Matches your setup.** The valley follows the time of day; his light takes the colour of your wallpaper.
+- **Closing quits.** The × or closing the window stops everything: voice, mic, camera and learning.
 
 ```bash
 cd desktop

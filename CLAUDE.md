@@ -14,7 +14,10 @@ An Electron app that loads the same `index.html` (it detects `window.atlas` from
 - `preload.js` — the only bridge the page gets (`window.atlas`).
 - `live.js` — Gemini Live WebSocket (16 kHz PCM in, 24 kHz PCM out, transcripts, tool calls, session resumption).
 - `tools.js` — everything Atlas can do on the PC. `risk: 'ask'` tools show a native Windows dialog before acting; nothing deletes permanently.
-- `brain.js` — memory and learning, as files in `%APPDATA%\Atlas\brain`: `memory.md` (user-editable), `journal/DAY.jsonl`, `days/DAY.md` digests, `habits.json`, `reminders.json`.
+- `brain.js` — memory and learning, as files in `%APPDATA%\Atlas\brain`: `memory.md` (user-editable, weekly tidy-up with `memory.bak.md`), `journal/DAY.jsonl`, `days/DAY.md` digests and `days/YYYY-Www.md` weekly reviews, `notes/` (deep-thinking results), `index.jsonl` (embeddings for recall by meaning), `habits.json`, `reminders.json`.
+- `think.js` — `think_deeply`: background agent loop on the strongest reasoning model with `web_search`, `read_webpage` and all PC tools; keeps model turns unchanged (thought signatures); saves a note and reports back.
+- `proactive.js` — unprompted nudges (meeting soon, stuck on an error, break, habits), at most one per 15 minutes; notification-only in calls or Quiet mode.
+- Closing the window quits the app. A second launch exits at once (`app.exit` before anything starts). The window watcher exits by itself if Atlas dies.
 - `pc.js` — PowerShell helpers, Start-menu app launch, media keys, wallpaper/theme, foreground-window watcher, wallpaper accent colour.
 - `cloud.js` — Gemini model discovery (live models are picked from the key's model list), one-shot `generate()`, and the web build's `api/*.js` reused for the non-live fallback.
 - `store.js` — settings; API keys encrypted with `safeStorage`. In dev, a repo-root `.env.local` fills in missing keys.

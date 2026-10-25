@@ -59,25 +59,65 @@ async function textModels(){
   } catch (e) { return ['gemini-flash-latest', 'gemini-flash-lite-latest']; }
 }
 
-// one-shot generateContent with model fallover; parts are Gemini parts ({text} or {inlineData})
-async function generate(parts, { json = false, system = '' } = {}){
+// the strongest reasoning models first (pro), then the best flash models as fallback
+async function reasoningModels(){
+  try {
+    const ms = (await listModels()).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//, ''))
+      .filter(n => /^gemini-/.test(n) && /pro|flash/.test(n) && !/live|tts|image|audio|embedding|robotics|computer|exp|lite/.test(n));
+    const score = n => version(n)*10 + (/pro/.test(n) ? 5 : 0) + (/preview/.test(n) ? 0 : 0.5);
+    return ms.sort((a, b) => score(b) - score(a)).slice(0, 4);
+  } catch (e) { return ['gemini-pro-latest', 'gemini-flash-latest']; }
+}
+
+// one generateContent call on one model; returns { ok, status, candidate } so callers can keep whole model turns
+async function request(model, payload){
   const key = store.getKey('gemini');
   if (!key) throw new Error('missing_key');
+  const r = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload) });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, candidate: data.candidates && data.candidates[0], error: data.error && data.error.message };
+}
+const textOf = c => ((c && c.content && c.content.parts) || []).filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
+
+// one-shot generateContent with model fallover; parts are Gemini parts ({text} or {inlineData})
+async function generate(parts, { json = false, system = '', tools } = {}){
   const payload = { contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.4, maxOutputTokens: 4096, ...(json ? { responseMimeType: 'application/json' } : {}) } };
   if (system) payload.systemInstruction = { parts: [{ text: system }] };
+  if (tools) payload.tools = tools;
   let last = '';
   for (const model of await textModels()){
     try {
-      const r = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload) });
-      const data = await r.json().catch(() => ({}));
+      const r = await request(model, payload);
       if (!r.ok){ last = `${model}: ${r.status}`; continue; }
-      const text = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [])
-        .filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
+      const text = textOf(r.candidate);
       if (!text){ last = `${model}: empty`; continue; }
+      if (tools) return { text, sources: ((r.candidate.groundingMetadata && r.candidate.groundingMetadata.groundingChunks) || []).map(g => g.web && g.web.uri).filter(Boolean).slice(0, 8) };
       return json ? JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')) : text;
-    } catch (e) { last = `${model}: ${e.message}`; }
+    } catch (e) { if (e.message === 'missing_key') throw e; last = `${model}: ${e.message}`; }
   }
   throw new Error(last || 'no_model');
 }
 
-module.exports = { route, liveModels, generate, BASE };
+// text embeddings for semantic memory; null when no embedding model is available
+let embedModelP = null;
+async function embed(texts){
+  if (!embedModelP) embedModelP = listModels().then(ms => {
+    const e = ms.filter(m => (m.supportedGenerationMethods || []).includes('embedContent')).map(m => m.name.replace(/^models\//, ''));
+    return e.filter(n => /gemini-embedding/.test(n)).sort((a, b) => version(b) - version(a) || b.localeCompare(a))[0] || e[0] || null;
+  }).catch(() => { embedModelP = null; return null; });
+  const model = await embedModelP;
+  if (!model) return null;
+  const out = [];
+  for (let i = 0; i < texts.length; i += 100){
+    const batch = texts.slice(i, i + 100);
+    const r = await fetch(`${BASE}/models/${encodeURIComponent(model)}:batchEmbedContents`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': store.getKey('gemini') },
+      body: JSON.stringify({ requests: batch.map(t => ({ model: 'models/' + model, content: { parts: [{ text: t.slice(0, 6000) }] }, outputDimensionality: 768 })) }) });
+    if (!r.ok) throw new Error('embed ' + r.status);
+    const data = await r.json();
+    out.push(...(data.embeddings || []).map(e => e.values));
+  }
+  return out;
+}
+
+module.exports = { route, liveModels, reasoningModels, request, textOf, generate, embed, BASE };

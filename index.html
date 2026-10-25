@@ -105,7 +105,7 @@ html.companion .lines:has(.line:empty + .line:empty){background:none}
   <div class="cam" id="camWrap" hidden><video id="cam" playsinline muted></video><i id="ret"></i></div>
 </div>
 <div class="hud tr">
-  <button id="hideBtn" type="button" aria-label="Hide Atlas to the tray" title="Hide to tray">×</button>
+  <button id="hideBtn" type="button" aria-label="Close Atlas" title="Close Atlas">×</button>
   <div id="status">Status: assembling… 0%</div>
   <div id="track">Track: pointer</div>
   <div id="voiceName"></div>
@@ -812,14 +812,14 @@ function draw(){
 
 /* ---------- HUD ---------- */
 const statusEl = $('status'), trackEl = $('track');
-let statusTxt = '';
+let statusTxt = '', deepOn = false;
 function setStatus(s){ statusTxt = s; }
 function setTrack(s){ trackEl.textContent = 'Track: ' + s; }
 let shownStatus = '';
 function hudTick(){
   let s;
   if (!REDUCE && T < ASM_END) s = 'Status: assembling… ' + Math.round(clamp(T/ASM_END)*100) + '%';
-  else s = 'Status: ' + (statusTxt || (!awake ? 'standby' : DESK && !listenOn ? 'mic off' : 'listening'));
+  else s = 'Status: ' + (statusTxt || (deepOn ? 'thinking deeply' : !awake ? 'standby' : DESK && !listenOn ? 'mic off' : 'listening'));
   if (s !== shownStatus){ statusEl.textContent = s; statusEl.classList.toggle('hot', /speaking|thinking/.test(s)); shownStatus = s; }
 }
 
@@ -1234,7 +1234,21 @@ if (DESK){
     if (!hadKey && i.hasGemini){ if (awake){ listenOn = true; micUI(); micOn(); DESK.liveStart(); } else wakeUp(); }
   });
   $('sClose').addEventListener('click', () => { setupEl.hidden = true; });
-  $('hideBtn').addEventListener('click', () => DESK.hide());
+  $('hideBtn').addEventListener('click', () => DESK.quit());
+  $('wakeRow').querySelector('small').textContent = 'He uses your camera to follow your face and speaks out loud. Camera frames stay on your PC unless you ask Atlas to look.';
+  // one still from the camera when Atlas is asked to look (the main process asks permission first)
+  DESK.on('grab-frame', id => {
+    let b64 = null;
+    try {
+      if (video.srcObject && video.readyState >= 2){
+        const c = document.createElement('canvas'); c.width = 640; c.height = 480;
+        c.getContext('2d').drawImage(video, 0, 0, 640, 480);
+        b64 = c.toDataURL('image/jpeg', 0.8).split(',')[1];
+      }
+    } catch(e){}
+    DESK.frame(id, b64);
+  });
+  DESK.on('deep', d => { deepOn = !!(d && d.active); });
   DESK.on('settings', () => openSetup());
   DESK.on('hotkey', () => { if (!awake) wakeUp(); else micBtn.click(); });
   DESK.on('memory', p => { if (p && p.Name){ userName = p.Name; store.set('atlas-name', p.Name); } });

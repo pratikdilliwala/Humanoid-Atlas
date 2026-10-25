@@ -112,7 +112,63 @@ function conversation(entries, max = 8000){
     .map(e => e.kind === 'action' ? `[Atlas did: ${e.tool} ${e.ok ? 'ok' : 'failed'}]` : `${e.kind === 'heard' ? 'User' : 'Atlas'}: ${e.text}`)
     .join('\n').slice(-max);
 }
-function recall(query){
+/* ---------- semantic index: brain/index.jsonl, one embedded snippet per line ---------- */
+const readIndex = () => { try { return fs.readFileSync(dir('index.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } };
+const unit = v => { let s = 0; for (const x of v) s += x*x; s = Math.sqrt(s) || 1; return Float32Array.from(v, x => x/s); };
+const toB64 = v => Buffer.from(unit(v).buffer).toString('base64');
+const fromB64 = s => { const b = Buffer.from(s, 'base64'); return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)); };
+async function addToIndex(items, embed){
+  const have = new Set(readIndex().map(x => x.id));
+  const todo = items.filter(i => i.text && i.text.trim() && !have.has(i.id));
+  if (!todo.length || !embed) return 0;
+  const vecs = await embed(todo.map(i => i.text));
+  if (!vecs || vecs.length !== todo.length) return 0;
+  fs.mkdirSync(dir(), { recursive: true });
+  fs.appendFileSync(dir('index.jsonl'), todo.map((i, k) => JSON.stringify({ id: i.id, kind: i.kind, day: i.day || '', text: i.text.slice(0, 2000), vec: toB64(vecs[k]) })).join('\n') + '\n');
+  return todo.length;
+}
+// everything worth finding later: memory facts, conversation exchanges, day and week summaries, deep-thinking notes
+function indexItems(){
+  const items = [], mem = readMemory();
+  for (const [k, v] of Object.entries(mem.profile)) items.push({ id: 'fact:' + norm(`${k} ${v}`), kind: 'memory', text: `${k}: ${v}` });
+  for (const s of SECTIONS.slice(1)) for (const x of mem.sections[s]) items.push({ id: 'fact:' + norm(x), kind: 'memory', text: x });
+  for (const d of journalDays().slice(-30)){
+    const e = readDay(d);
+    for (let i = 0; i < e.length; i++){
+      if (e[i].kind !== 'heard') continue;
+      const reply = e.slice(i + 1, i + 4).find(x => x.kind === 'said');
+      items.push({ id: `chat:${e[i].t}`, kind: 'conversation', day: d, text: `User: ${e[i].text}${reply ? `\nAtlas: ${reply.text}` : ''}` });
+    }
+  }
+  for (const sub of ['days', 'notes']){
+    let files = []; try { files = fs.readdirSync(dir(sub)).filter(f => f.endsWith('.md')); } catch (e) {}
+    for (const f of files){
+      const kind = sub === 'notes' ? 'note' : /W\d\d\.md$/.test(f) ? 'week' : 'day';
+      try { items.push({ id: `${kind}:${f}`, kind, day: f.slice(0, 10), text: fs.readFileSync(dir(sub, f), 'utf8').slice(0, 4000) }); } catch (e) {}
+    }
+  }
+  return items;
+}
+async function recall(query, embed){
+  const out = [];
+  if (embed){
+    try {
+      const [q] = (await embed([query])) || [];
+      if (q){
+        const qv = unit(q), memNow = memoryText();
+        const scored = readIndex()
+          // a memory fact that was since edited or forgotten doesn't come back
+          .filter(x => x.kind !== 'memory' || memNow.includes(x.text))
+          .map(x => { const v = fromB64(x.vec); let s = 0; for (let i = 0; i < v.length && i < qv.length; i++) s += v[i]*qv[i]; return { x, s }; })
+          .sort((a, b) => b.s - a.s).slice(0, 8).filter(o => o.s > 0.3);
+        for (const { x } of scored) out.push(`${x.day ? x.day + ' ' : ''}${x.kind}: ${x.text.replace(/\s+/g, ' ').slice(0, 500)}`);
+      }
+    } catch (e) {}
+  }
+  for (const x of recallWords(query)) if (!out.some(o => o.includes(x.slice(x.indexOf(':') + 1).trim().slice(0, 60)))) out.push(x);
+  return out.slice(0, 20);
+}
+function recallWords(query){
   const out = [];
   for (const x of forgetCandidates(query)) out.push('memory: ' + x);
   const days = journalDays().slice(-30).reverse();
@@ -143,8 +199,52 @@ const LEARN_SYS = 'You maintain the long-term memory of Atlas, a personal deskto
   'and secrets such as passwords, card numbers or keys. Reply as JSON: {"summary": "2-4 sentences, in second person, about what the user worked on and talked about", ' +
   '"facts": [{"category": "preference|person|project|routine|other", "text": "short fact"}]}';
 
-// digest finished days that have no digest yet, then learn facts from today's new conversation
-async function learn(generate){
+// ISO week label, e.g. 2026-W43
+function week(d){
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())), n = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - n);
+  const y = t.getUTCFullYear();
+  return `${y}-W${String(Math.ceil(((t - Date.UTC(y, 0, 1))/864e5 + 1)/7)).padStart(2, '0')}`;
+}
+function lastWeek(){
+  let files = []; try { files = fs.readdirSync(dir('days')).filter(f => /W\d\d\.md$/.test(f)).sort(); } catch (e) {}
+  const f = files.pop();
+  if (!f) return '';
+  try { return f.slice(0, -3) + ': ' + fs.readFileSync(dir('days', f), 'utf8').split('\n').filter(l => l && !l.startsWith('#')).join(' ').slice(0, 1200); } catch (e) { return ''; }
+}
+
+const WEEK_SYS = 'You write the weekly review in the memory of Atlas, a personal desktop assistant. From the daily digests, write 4-6 sentences in second person: the main themes, ' +
+  'what moved forward on each project, people who came up, patterns in how the user works, and anything left open to follow up. Plain text, no lists.';
+const CONSOLIDATE_SYS = 'You tidy the long-term memory of Atlas, a personal desktop assistant. Merge duplicates, combine facts about the same thing, and drop a fact only when a newer one ' +
+  'clearly replaces it. Keep everything else, keep facts short, never invent anything. Reply as JSON: {"profile": {"Key": "value"}, "Preferences": [], "People": [], "Projects": [], "Routines": [], "Other": []}';
+
+// a weekly review for each finished week, then a tidy-up of memory.md (with a backup) once per new week
+async function weekly(generate){
+  let digests = []; try { digests = fs.readdirSync(dir('days')).filter(f => /^\d{4}-\d{2}-\d{2}\.md$/.test(f)).sort(); } catch (e) { return; }
+  const thisWeek = week(new Date()), byWeek = {};
+  for (const f of digests){ const w = week(new Date(f.slice(0, 10) + 'T12:00')); (byWeek[w] = byWeek[w] || []).push(f); }
+  let wrote = false;
+  for (const [w, files] of Object.entries(byWeek)){
+    if (w === thisWeek || fs.existsSync(dir('days', w + '.md'))) continue;
+    const text = files.map(f => fs.readFileSync(dir('days', f), 'utf8').split('\n## ')[0]).join('\n\n');
+    try { fs.writeFileSync(dir('days', w + '.md'), `# Week ${w}\n\n${String(await generate([{ text }], { system: WEEK_SYS })).trim()}\n`); wrote = true; } catch (e) { return; }
+  }
+  if (!wrote) return;
+  const mem = readMemory(), count = m => Object.keys(m.profile).length + SECTIONS.slice(1).reduce((n, s) => n + m.sections[s].length, 0);
+  if (count(mem) < 8) return;
+  try {
+    const r = await generate([{ text: fs.readFileSync(dir('memory.md'), 'utf8') }], { json: true, system: CONSOLIDATE_SYS });
+    const next = { profile: r.profile && typeof r.profile === 'object' ? r.profile : {}, sections: {} };
+    for (const s of SECTIONS.slice(1)) next.sections[s] = Array.isArray(r[s]) ? r[s].map(String).filter(Boolean) : [];
+    // a tidy-up that loses most of memory is a bad answer, not a tidy-up
+    if (count(next) < count(mem)*0.6) return;
+    fs.copyFileSync(dir('memory.md'), dir('memory.bak.md'));
+    writeMemory(next);
+  } catch (e) {}
+}
+
+// digest finished days that have no digest yet, learn facts from today's new conversation, review finished weeks, update the search index
+async function learn(generate, embed){
   const s = state(), today = day();
   for (const d of journalDays().filter(x => x < today).slice(-7)){
     if (fs.existsSync(dir('days', d + '.md'))) continue;
@@ -174,6 +274,8 @@ async function learn(generate){
     } catch (e) {}
   }
   computeHabits();
+  await weekly(generate);
+  if (embed){ try { await addToIndex(indexItems(), embed); } catch (e) {} }
 }
 
 // an app is a habit when you first opened it on at least 3 of the last 14 days at a similar time of day
@@ -219,5 +321,5 @@ function takeDueReminders(){
   return due;
 }
 
-module.exports = { dir, day, remember, setProfile, forget, forgetCandidates, readMemory, memoryText, log, readDay, usage, recall,
-  state, saveState, lastDigest, learn, habitText, dueHabits, markOffered, hhmm, addReminder, reminders, takeDueReminders };
+module.exports = { dir, day, week, remember, setProfile, forget, forgetCandidates, readMemory, memoryText, log, readDay, usage, recall, readIndex, addToIndex, indexItems,
+  state, saveState, lastDigest, lastWeek, learn, habitText, dueHabits, markOffered, hhmm, addReminder, reminders, takeDueReminders };

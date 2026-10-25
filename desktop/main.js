@@ -2,9 +2,10 @@
 const fs = require('fs'), path = require('path');
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, dialog, shell, screen, session, nativeImage, Notification, powerMonitor } = require('electron');
 const store = require('./store'), cloud = require('./cloud'), brain = require('./brain'), tools = require('./tools'), pc = require('./pc');
-const Live = require('./live');
+const Live = require('./live'), think = require('./think'), proactive = require('./proactive');
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// a second launch hands over to the running Atlas (which shows itself) and exits before doing anything else
+if (!app.requestSingleInstanceLock()){ app.exit(0); return; }
 // Windows only shows notifications for a known app id: the installer registers ours; unpackaged runs use Electron's own
 app.setAppUserModelId(app.isPackaged ? 'com.pratikdilliwala.atlas' : process.execPath);
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -12,7 +13,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const RES = app.isPackaged ? process.resourcesPath : __dirname;
 const WEB = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..');
 const ICON = path.join(RES, 'icon.png');
-let win = null, tray = null, quitting = false;
+let win = null, tray = null, switching = false;
 const send = (ch, data) => { if (win && !win.isDestroyed()) win.webContents.send(ch, data); };
 
 /* ---------- window ---------- */
@@ -34,7 +35,8 @@ function createWindow(){
   win.once('ready-to-show', () => { if (!process.argv.includes('--hidden')) win.show(); });
   const keep = () => { const all = store.get('bounds') || {}; all[companion ? 'companion' : 'full'] = win.getBounds(); store.set('bounds', all); };
   win.on('moved', keep); win.on('resized', keep);
-  win.on('close', e => { if (!quitting){ e.preventDefault(); win.hide(); } });
+  // closing the window quits Atlas: voice, mic, camera, watcher and tray all stop
+  win.on('close', () => { if (!switching) app.quit(); });
   // the page never navigates away; links open in the browser
   win.webContents.on('will-navigate', e => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
@@ -43,8 +45,10 @@ function switchMode(mode){
   if (store.get('mode') === mode) return;
   store.set('mode', mode);
   const old = win; win = null;
-  old.removeAllListeners('close'); old.destroy();
+  switching = true;
+  old.destroy();
   createWindow(); buildTray();
+  switching = false;
 }
 function showWin(){ if (!win) return; win.show(); win.focus(); }
 
@@ -75,11 +79,12 @@ function buildTray(){
     { label: 'Full scene', type: 'radio', checked: mode === 'full', click: () => switchMode('full') },
     { type: 'separator' },
     { label: 'Learn from what I do', type: 'checkbox', checked: !!store.get('learn'), click: i => { store.set('learn', i.checked); i.checked ? startWatcher() : stopWatcher(); } },
+    { label: 'Quiet mode (no speaking up on his own)', type: 'checkbox', checked: !!store.get('quiet'), click: i => store.set('quiet', i.checked) },
     { label: 'Start with Windows', type: 'checkbox', checked: autostart(), click: i => setAutostart(i.checked) },
     { label: 'Settings…', click: () => { showWin(); send('settings'); } },
     { label: 'Open Atlas\'s brain folder', click: () => { fs.mkdirSync(brain.dir(), { recursive: true }); shell.openPath(brain.dir()); } },
     { type: 'separator' },
-    { label: 'Quit Atlas', click: () => { quitting = true; app.quit(); } }
+    { label: 'Quit Atlas', click: () => app.quit() }
   ]));
   tray.removeAllListeners('click');
   tray.on('click', () => win && (win.isVisible() ? win.hide() : showWin()));
@@ -95,17 +100,20 @@ let turn = { heard: '', said: '' };
 const cancelled = new Set();
 
 function systemPrompt(){
-  const mem = brain.memoryText(), hab = brain.habitText(), last = brain.lastDigest(), now = new Date();
+  const mem = brain.memoryText(), hab = brain.habitText(), last = brain.lastDigest(), wk = brain.lastWeek(), now = new Date();
   return [
     "You are Atlas, a calm, deep-voiced humanoid made of light who lives on the user's Windows desktop. You see the user through their camera, hear them through the microphone, and can act on their PC with your tools.",
     'You speak out loud: answer in one to three short spoken sentences unless the user asks for more. No markdown, lists or emoji. Be confident, warm and a little cinematic. If the user speaks Hindi or Hinglish, reply the same way.',
     'Use your tools whenever the user asks you to do something on the PC or needs live information; use Google Search for news, scores, prices and anything that changes. Some tools show the user a permission dialog: if they decline, accept it and do not retry. Never say you did something unless the tool result confirms it.',
-    'You have a long-term memory that lasts across conversations. Whenever you learn something lasting about the user (name, home city, preferences, people, projects, routines, goals, dates), call remember straight away without announcing it. Use recall when the user refers to something from before this conversation.',
+    'You have a long-term memory that lasts across conversations. Whenever you learn something lasting about the user (name, home city, preferences, people, projects, routines, goals, dates), call remember straight away without announcing it. Use recall whenever the user refers to anything from before this conversation, even vaguely ("that thing last week"): it searches by meaning.',
+    'Think before you answer. For anything hard or long (research, comparing options, planning, writing, analysing files, multi-step PC work) call think_deeply with the full task, tell the user you are on it, and keep talking with them meanwhile; you will get the result when it is done. Answer quick questions yourself.',
+    'You can see: call look_at_camera when the user asks you to look at them or at something they hold up, and look_at_screen when they ask about what is on their screen or need help with an error there.',
     'Messages that start with "[Atlas system" come from the app, not the user: act on them, but never read them out or mention them.',
     `It is now ${now.toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`,
     mem ? `What you remember about the user:\n${mem}` : 'You know nothing about the user yet. Early on, ask their name and save it with remember (category profile, "Name: ...").',
     hab ? `Routines you have noticed:\n${hab}` : '',
-    last ? `Their last day on the PC: ${last}` : ''
+    last ? `Their last day on the PC: ${last}` : '',
+    wk ? `Their last week: ${wk}` : ''
   ].filter(Boolean).join('\n\n');
 }
 
@@ -182,8 +190,39 @@ async function ask(title, detail, buttons = ['Allow', 'Deny']){
   brain.log('asked', { title, ok });
   return ok ? response + 1 : 0;
 }
+// one camera frame from the page, as base64 JPEG, or null when the camera is off
+const frameWaits = new Map();
+let frameN = 0;
+function grabFrame(){
+  return new Promise(resolve => {
+    const id = ++frameN;
+    frameWaits.set(id, resolve);
+    send('grab-frame', id);
+    setTimeout(() => { if (frameWaits.delete(id)) resolve(null); }, 3000);
+  });
+}
+ipcMain.on('atlas:frame', (e, id, b64) => { const r = frameWaits.get(id); if (r){ frameWaits.delete(id); r(typeof b64 === 'string' && b64 ? b64 : null); } });
+
+// a deep task reports back out loud if Atlas is listening, and always as a notification that opens the note
+function deepTask(task){
+  return think.start(task, toolCtx, {
+    onStep: name => send('deep', { active: true, step: name }),
+    onDone: r => {
+      send('deep', { active: false });
+      notify(`Atlas finished: ${r.title}`, r.summary.slice(0, 200), () => shell.openPath(r.file));
+      if (live && live.ready) live.text(`[Atlas system: deep task done] The background task "${r.title}" is finished. Tell the user the result in two or three spoken sentences, and that the full note is saved and opens from the notification. Result summary: ${r.summary}`);
+      else send('say', `Done: ${r.title}. ${r.summary}`.slice(0, 400));
+      learnSoon();
+    },
+    onError: e => {
+      send('deep', { active: false });
+      notify('Atlas could not finish a task', e.message.slice(0, 200));
+      if (live && live.ready) live.text(`[Atlas system: deep task failed] The background task failed (${e.message.slice(0, 200)}). Tell the user briefly.`);
+    }
+  });
+}
 const toolCtx = {
-  ask, generate: cloud.generate,
+  ask, generate: cloud.generate, embed: cloud.embed, frame: grabFrame, think: task => { const r = deepTask(task); if (r.started) send('deep', { active: true }); return r; },
   hide: h => win && win.setOpacity(h ? 0 : 1),
   wallpaperChanged: () => updateAccent(true),
   memoryChanged: () => send('memory', brain.readMemory().profile)
@@ -207,11 +246,12 @@ const PRIVATE = /InPrivate|Incognito|Private Browsing|password|1Password|Bitward
 function startWatcher(){
   if (watcher || !store.get('learn')) return;
   watcher = pc.watchForeground(s => {
-    if (powerMonitor.getSystemIdleTime() > 300){ if (!idle){ idle = true; lastFocus = ''; brain.log('idle'); } return; }
+    if (powerMonitor.getSystemIdleTime() > 300){ if (!idle){ idle = true; lastFocus = ''; brain.log('idle'); proactive.sample({ idle: true }); } return; }
     idle = false;
     if (!s.proc || /^(atlas|electron|LockApp|SearchHost|ShellExperienceHost)$/i.test(s.proc)) return;
     const name = s.desc && s.desc.length < 40 ? s.desc : s.proc;
     const title = PRIVATE.test(s.title) || PRIVATE.test(name) ? '' : s.title.slice(0, 160);
+    proactive.sample({ app: name, title });
     const k = name + '|' + title;
     if (k !== lastFocus){ lastFocus = k; brain.log('focus', { app: name, title }); }
   });
@@ -224,7 +264,7 @@ function learnSoon(ms = 5000){
   learnTO = setTimeout(async () => {
     if (learning || !store.getKey('gemini')) return;
     learning = true;
-    try { await brain.learn(cloud.generate); } catch (e) { console.warn('learn failed', e.message); }
+    try { await brain.learn(cloud.generate, cloud.embed); } catch (e) { console.warn('learn failed', e.message); }
     learning = false;
   }, ms);
 }
@@ -239,14 +279,16 @@ setInterval(() => {
     if (live && live.ready) live.text(`[Atlas system: reminder due] Tell the user now, out loud: ${r.text}`);
     else send('say', 'Reminder. ' + r.text);
   }
-  if (store.get('learn') && powerMonitor.getSystemIdleTime() < 120){
-    for (const h of brain.dueHabits()){
-      brain.markOffered(h.app);
-      if (live && live.ready) live.text(`[Atlas system: habit] The user usually opens ${h.app} around ${brain.hhmm(h.minute)} and hasn't yet today. Offer briefly to open it; call open_app only if they say yes.`);
-      else notify('Atlas', `You usually open ${h.app} around ${brain.hhmm(h.minute)}. Click to open it.`, async () => { const a = await pc.findApp(h.app); if (a) pc.launchApp(a.AppID); });
-    }
-  }
 }, 30000);
+// speaking up unprompted: meetings, being stuck, breaks, habits (see proactive.js); nothing while you're away
+setInterval(async () => {
+  if (powerMonitor.getSystemIdleTime() > 120) return;
+  const n = await proactive.check({ quiet: !!store.get('quiet'), habits: store.get('learn') ? brain.dueHabits : () => [] });
+  if (!n) return;
+  brain.log('nudge', { id: n.id });
+  if (n.speak && live && live.ready) return live.text('[Atlas system: proactive] ' + n.text);
+  notify('Atlas', n.note, n.habit ? async () => { const a = await pc.findApp(n.habit.app); if (a) pc.launchApp(a.AppID); } : showWin);
+}, 60000);
 // learn once an hour too, so a day's digest is ready by morning even if Atlas never restarts
 setInterval(() => learnSoon(0), 3600e3);
 
@@ -303,7 +345,7 @@ ipcMain.on('atlas:live:text', (e, text) => {
 });
 ipcMain.on('atlas:mouse', (e, ignore) => { if (win && store.get('mode') === 'companion') win.setIgnoreMouseEvents(!!ignore, { forward: true }); });
 ipcMain.on('atlas:name', (e, name) => { if (name) brain.remember('profile', 'Name: ' + String(name).slice(0, 40)); });
-ipcMain.on('atlas:hide', () => win && win.hide());
+ipcMain.on('atlas:quit', () => app.quit());
 ipcMain.on('atlas:log', (e, kind, text) => { if (/^(heard|said)$/.test(kind)) brain.log(kind, { text: String(text).slice(0, 2000) }); });
 
 /* ---------- lifecycle ---------- */
@@ -327,6 +369,9 @@ app.whenReady().then(() => {
   powerMonitor.on('suspend', () => brain.log('idle'));
   powerMonitor.on('lock-screen', () => brain.log('idle'));
 });
-app.on('window-all-closed', e => e.preventDefault());
-app.on('before-quit', () => { quitting = true; brain.log('stop'); liveStop(); stopWatcher(); });
+app.on('window-all-closed', () => { if (!switching) app.quit(); });
+let stopped = false;
+app.on('before-quit', () => { if (stopped) return; stopped = true; brain.log('stop'); liveStop(); stopWatcher(); if (tray){ tray.destroy(); tray = null; } });
 app.on('will-quit', () => globalShortcut.unregisterAll());
+// even if Atlas dies without quitting cleanly, don't leave the watcher behind
+process.on('exit', stopWatcher);

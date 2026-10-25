@@ -86,7 +86,7 @@ function walk(roots, query, limit){
   return hits;
 }
 
-let screenUntil = 0;
+let screenUntil = 0, cameraOK = false;
 const TOOLS = [
   { name: 'open_app', risk: 'safe', description: 'Open an installed app by name (anything in the Start menu, e.g. "Spotify", "Visual Studio Code", "Calculator").',
     parameters: obj({ name: S('App name') }, ['name']),
@@ -172,6 +172,19 @@ const TOOLS = [
       const answer = await ctx.generate([{ inlineData: { mimeType: 'image/jpeg', data: jpg } }, { text: `This is the user's screen. ${question}\nAnswer in a few plain sentences.` }]);
       return { answer };
     } },
+  { name: 'look_at_camera', risk: 'ask', description: 'Look at the user through the webcam and answer a question about what you see (what they are holding, how they look, what is behind them). Only when the user asks you to look at them or at something they show you.',
+    parameters: obj({ question: S('What to find out from the camera') }, ['question']),
+    async run({ question }, ctx){
+      if (!cameraOK){
+        const r = await ctx.ask('Look through your camera?', 'Atlas wants to send one camera photo to Gemini to answer:\n' + question, ['Allow once', 'Allow until Atlas closes', 'Deny']);
+        if (!r) return { declined: true };
+        if (r === 2) cameraOK = true;
+      }
+      const jpg = await ctx.frame();
+      if (!jpg) return { error: 'camera_off', hint: 'The camera is not on. Ask the user to wake Atlas with the camera allowed.' };
+      const answer = await ctx.generate([{ inlineData: { mimeType: 'image/jpeg', data: jpg } }, { text: `This is a photo of the user from their webcam. ${question}\nAnswer in a few plain sentences, speaking to the user.` }]);
+      return { answer };
+    } },
   { name: 'set_wallpaper', risk: 'ask', description: 'Set the desktop wallpaper to an image file. Asks first.',
     parameters: obj({ path: S('Full path to a .jpg/.png/.bmp') }, ['path']),
     async run({ path: p }, ctx){
@@ -204,8 +217,8 @@ const TOOLS = [
   { name: 'remember', risk: 'safe', description: 'Save a durable fact about the user to long-term memory. Use it on your own whenever you learn something lasting (name, home city, preferences, people, projects, routines, goals, important dates). For profile facts use "Key: value", e.g. "Home city: Pune".',
     parameters: obj({ category: S('Kind of fact', { enum: ['profile', 'preference', 'person', 'project', 'routine', 'other'] }), fact: S('The fact, short and specific') }, ['category', 'fact']),
     async run({ category, fact }, ctx){ const r = brain.remember(category, fact); ctx.memoryChanged(); return r; } },
-  { name: 'recall', risk: 'safe', description: 'Search long-term memory and past days (conversations, apps and windows used, digests) for something not in this conversation.',
-    parameters: obj({ query: S('Words to look for') }, ['query']), async run({ query }){ return { found: brain.recall(query) }; } },
+  { name: 'recall', risk: 'safe', description: 'Search long-term memory and everything from past days (conversations, notes, day and week summaries, apps and windows used) by meaning. Use it whenever the user refers to something from before this conversation.',
+    parameters: obj({ query: S('What to look for, in plain words') }, ['query']), async run({ query }, ctx){ return { found: await brain.recall(query, ctx && ctx.embed) }; } },
   { name: 'forget', risk: 'ask', description: 'Remove facts from long-term memory when the user asks. Shows the user what will be removed first.',
     parameters: obj({ query: S('Words that identify the facts') }, ['query']),
     async run({ query }, ctx){
@@ -213,7 +226,10 @@ const TOOLS = [
       if (!hits.length) return { found: 0 };
       if (!(await ctx.ask('Forget this?', 'Atlas will remove from memory:\n\n' + hits.map(h => '• ' + h).join('\n')))) return { declined: true };
       const gone = brain.forget(query); ctx.memoryChanged(); return { forgot: gone };
-    } }
+    } },
+  { name: 'think_deeply', risk: 'safe', description: 'For hard or long tasks: research, comparisons, planning, writing, analysing documents, or multi-step work on the PC. A stronger reasoning model works on it in the background with web search, web pages, memory and the PC tools, saves a full note and reports back. Not for quick questions you can answer yourself.',
+    parameters: obj({ task: S('The complete task with all the context from the conversation, written so it can be done without asking anything') }, ['task']),
+    async run({ task }, ctx){ return ctx.think ? ctx.think(task) : { error: 'unavailable' }; } }
 ];
 
 const declarations = () => TOOLS.map(({ name, description, parameters }) => ({ name, description, parameters }));
@@ -223,6 +239,6 @@ async function run(name, args, ctx){
   return t.run(args || {}, ctx);
 }
 const label = name => ({ open_app: 'opening', open_url: 'opening', open_path: 'opening', find_files: 'searching', read_file: 'reading', write_file: 'writing',
-  look_at_screen: 'looking', get_weather: 'checking weather', get_calendar: 'checking calendar', recall: 'remembering', remember: 'remembering' })[name] || 'working';
+  look_at_screen: 'looking', look_at_camera: 'looking', think_deeply: 'thinking deeply', get_weather: 'checking weather', get_calendar: 'checking calendar', recall: 'remembering', remember: 'remembering' })[name] || 'working';
 
 module.exports = { declarations, run, label, weather, calendar };

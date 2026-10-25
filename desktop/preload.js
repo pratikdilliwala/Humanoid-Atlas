@@ -1,7 +1,7 @@
 // The only bridge between the page and the PC. The page gets these calls and nothing else.
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = ['live:state', 'live:audio', 'live:heard', 'live:said', 'live:turn', 'live:interrupted', 'tool', 'asking', 'cursor', 'accent', 'hotkey', 'settings', 'say', 'memory'];
+const EVENTS = ['live:state', 'live:audio', 'live:heard', 'live:said', 'live:turn', 'live:interrupted', 'tool', 'asking', 'cursor', 'accent', 'hotkey', 'settings', 'say', 'memory', 'grab-frame', 'deep'];
 
 contextBridge.exposeInMainWorld('atlas', {
   mode: ipcRenderer.sendSync('atlas:mode'),
@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('atlas', {
   ignoreMouse: on => ipcRenderer.send('atlas:mouse', on),
   setName: name => ipcRenderer.send('atlas:name', name),
   log: (kind, text) => ipcRenderer.send('atlas:log', kind, text),
-  hide: () => ipcRenderer.send('atlas:hide'),
+  quit: () => ipcRenderer.send('atlas:quit'),
+  frame: (id, b64) => ipcRenderer.send('atlas:frame', id, b64),
   on: (ch, cb) => { if (EVENTS.includes(ch)) ipcRenderer.on(ch, (e, data) => cb(data)); }
 });

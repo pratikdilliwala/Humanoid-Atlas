@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path');
 const { app, safeStorage } = require('electron');
 
-const DEFAULTS = { mode: 'companion', hotkey: 'Control+Shift+Space', voice: 'Charon', elevenVoice: '', liveModel: '', learn: true, autoWake: true, city: '', calendarUrl: '', bounds: null };
+const DEFAULTS = { mode: 'companion', hotkey: 'Control+Shift+Space', voice: 'Charon', elevenVoice: '', liveModel: '', learn: true, quiet: false, autoWake: true, city: '', calendarUrl: '', bounds: null };
 const ENV = { gemini: 'GEMINI_API_KEY', eleven: 'ELEVENLABS_API_KEY' };
 let data = null;
 
