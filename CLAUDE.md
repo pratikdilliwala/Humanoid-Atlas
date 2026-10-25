@@ -1,7 +1,7 @@
 # Atlas Humanoid
 
 A talking, head-tracking humanoid made of light, standing between glowing particle mountains.
-Live at https://atlas-humanoid.vercel.app (Vercel project `atlas-humanoid`, protected by Vercel Authentication).
+Deployed as a static page plus two serverless functions on Vercel. Screenshots and the opening GIF for the README live in `docs/`.
 
 ## Files
 - `index.html` — the whole front end in one file: Three.js r147 scene (particle mountains, neon shell figure, nerve pulses, bloom), MediaPipe face tracking, browser speech recognition, rule-based replies, and calls to the two API routes below.
@@ -17,7 +17,7 @@ Free-tier notes: ElevenLabs free accounts cannot use Voice Library voices throug
 
 ## Run locally
 The camera and the API routes need http(s), not file://.
-- With the Vercel CLI (runs the API routes too): `npm i -g vercel`, then `vercel link` (pick the existing `atlas-humanoid` project), `vercel env pull`, `vercel dev`, and open http://localhost:3000.
+- With the Vercel CLI (runs the API routes too): `npm i -g vercel`, then `vercel link` (pick your Vercel project), `vercel env pull`, `vercel dev`, and open http://localhost:3000.
 - Front end only: `npx serve .` and open the printed localhost URL. Atlas will use the browser voice and rule-based replies.
 
 ## Deploy
