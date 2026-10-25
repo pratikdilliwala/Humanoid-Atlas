@@ -31,7 +31,9 @@ module.exports = async (req, res) => {
     if (!r.ok){
       const detail = (await r.text().catch(() => '')).slice(0, 300);
       console.error('Atlas voice failed:', r.status, detail);
-      return res.status(r.status === 401 ? 401 : r.status === 429 ? 429 : 502).json({ error: 'tts_failed', detail });
+      // bad key, used-up quota, a voice the plan can't use, or a missing voice won't fix themselves on retry
+      const permanent = [401, 402, 403, 404].includes(r.status);
+      return res.status([401, 402, 403, 429].includes(r.status) ? r.status : 502).json({ error: 'tts_failed', permanent, detail });
     }
     const audio = Buffer.from(await r.arrayBuffer());
     res.setHeader('Content-Type', 'audio/mpeg');

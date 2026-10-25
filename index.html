@@ -842,7 +842,11 @@ async function cloudSpeak(text){
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
     const r = await fetch('/api/speak', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ text }), signal: ctl.signal });
     clearTimeout(to);
-    if (!r.ok){ if (r.status === 404 || r.status === 503 || r.status === 401) cloudVoice = false; return null; }
+    if (!r.ok){
+      const data = await r.json().catch(() => ({}));
+      if ([401, 402, 403, 404, 503].includes(r.status) || data.permanent) cloudVoice = false;
+      return null;
+    }
     const bytes = await r.arrayBuffer();
     return await new Promise((ok, no) => actx.decodeAudioData(bytes, ok, no));
   } catch(e){ return null; }
@@ -922,20 +926,22 @@ function extractName(t){
   if (!w.length || w.length > 3) return '';
   return w.slice(0,2).map(x => x[0].toUpperCase() + x.slice(1).toLowerCase()).join(' ');
 }
+// a rule fires only when its phrase is the whole message (optionally addressed to Atlas), so longer questions reach Gemini
+const only = src => new RegExp(`^\\s*(?:(?:hey|ok|okay)[,\\s]+)?(?:atlas[,!\\s]+)?(?:${src})(?:[,\\s]+atlas)?[\\s?!.]*$`, 'i');
 const RULES = [
   [/\b(my name is|call me)\b/i, t => { const n = extractName(t); if (!n) return null; userName = n; store.set('atlas-name', n); return `${n}. Noted. I won't forget it.`; }],
-  [/\b(who are you|your name|what are you)\b/i, () => 'I am Atlas. A mind built from light. I see you, I hear you, and I follow your every move.'],
-  [/\bhow are you\b/i, () => pick(['Running at full power. Every particle in place. And you?','Calm. Focused. Watching. How are you?'])],
-  [/\b(what(?:'s| is) the time|time is it|current time|\btime\b)/i, () => 'It is ' + new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}) + '.'],
-  [/\b(date|what day|today)\b/i, () => 'Today is ' + new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + '.'],
-  [/\b(what can you do|help|abilities)\b/i, () => 'I turn my head to follow you. Talk to me, ask me the time, ask for a joke, or just move around and watch me watch you.'],
-  [/\bjoke\b/i, () => pick(['I tried to take a nap once. Turns out I run on particles, not sleep. Now I just stare at people.','Why did the robot go on holiday? It needed to recharge its personality.','I asked the cloud for advice. It said, it depends on the weather.'])],
-  [/\b(look at me|follow me|watch me|track me|can you see me)\b/i, () => 'I already am. Move left. Now right. You are not leaving my sight.'],
-  [/\b(motivat|inspire)/i, () => pick(['Discipline beats motivation. Show up today, even for ten minutes.','Every one of my particles arrived one at a time. So will your results. Keep going.'])],
-  [/\b(sing|song)\b/i, () => 'My voice was built for speeches, not songs. Ask me something else.'],
-  [/\b(thank|thanks|shukriya|dhanyavad)\b/i, () => pick(['Anytime.','Always.','My pleasure, ' + nm() + '.'])],
-  [/\b(bye|good ?night|see you|shut ?down|sleep)\b/i, () => 'Powering down my voice. I will still be watching.'],
-  [/\b(hi|hello|hey|namaste|yo|good (morning|afternoon|evening))\b/i, () => { const h = new Date().getHours(); const g = h<12 ? 'Good morning' : h<17 ? 'Good afternoon' : 'Good evening'; return `${g}, ${nm()}. I'm here.`; }],
+  [only(`who are you|what(?:'s| is) your name|what are you|tell me about yourself`), () => 'I am Atlas. A mind built from light. I see you, I hear you, and I follow your every move.'],
+  [only(`how are you(?: doing| today)?|how(?:'s| is) it going`), () => pick(['Running at full power. Every particle in place. And you?','Calm. Focused. Watching. How are you?'])],
+  [only(`(?:what(?:'s| is) the |tell me the |current )?time(?: now| is it)?|what time is it(?: now)?`), () => 'It is ' + new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}) + '.'],
+  [only(`(?:what(?:'s| is) )?(?:the |today's )?date(?: today)?|what day is (?:it|today)(?: today)?|what(?:'s| is) today`), () => 'Today is ' + new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + '.'],
+  [only(`what can you do|what are your abilities|abilities|help(?: me)?`), () => 'I turn my head to follow you. Talk to me, ask me the time, ask for a joke, or just move around and watch me watch you.'],
+  [only(`(?:(?:tell|give) me |say |do you know )?(?:a |another |any )?jokes?(?: please)?`), () => pick(['I tried to take a nap once. Turns out I run on particles, not sleep. Now I just stare at people.','Why did the robot go on holiday? It needed to recharge its personality.','I asked the cloud for advice. It said, it depends on the weather.'])],
+  [only(`look at me|follow me|watch me|track me|(?:can|do) you see me`), () => 'I already am. Move left. Now right. You are not leaving my sight.'],
+  [only(`motivate me|inspire me|(?:give me |say )?(?:some )?(?:motivation|something (?:motivating|inspiring))`), () => pick(['Discipline beats motivation. Show up today, even for ten minutes.','Every one of my particles arrived one at a time. So will your results. Keep going.'])],
+  [only(`(?:can you |please )?sing(?: (?:me )?a song| something| for me)?`), () => 'My voice was built for speeches, not songs. Ask me something else.'],
+  [only(`(?:thank you|thanks|thank u|shukriya|dhanyavad)(?: (?:so much|a lot))?`), () => pick(['Anytime.','Always.','My pleasure, ' + nm() + '.'])],
+  [only(`bye|goodbye|good ?night|see you(?: later)?|shut ?down|go to sleep`), () => 'Powering down my voice. I will still be watching.'],
+  [only(`hi|hello|hey|(?:hi|hey|hello) there|namaste|yo|good (?:morning|afternoon|evening)`), () => { const h = new Date().getHours(); const g = h<12 ? 'Good morning' : h<17 ? 'Good afternoon' : 'Good evening'; return `${g}, ${nm()}. I'm here.`; }],
 ];
 function ruleReply(t){
   for (const [re, fn] of RULES){ if (re.test(t)){ const r = fn(t); if (r) return r; } }

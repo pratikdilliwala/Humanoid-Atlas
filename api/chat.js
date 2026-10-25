@@ -35,10 +35,11 @@ module.exports = async (req, res) => {
   const payload = {
     systemInstruction: { parts: [{ text: system }] },
     contents: [...history, { role: 'user', parts: [{ text }] }],
-    generationConfig: { temperature: 0.8, maxOutputTokens: 400 }
+    // thinking tokens count against maxOutputTokens, so leave room for them; the prompt keeps the spoken reply short
+    generationConfig: { temperature: 0.8, maxOutputTokens: 2048 }
   };
 
-  let lastErr = '';
+  let lastErr = '', limitedAll = true;
   for (const model of MODELS){
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -47,18 +48,22 @@ module.exports = async (req, res) => {
       const data = await r.json().catch(() => ({}));
       if (!r.ok){
         lastErr = `${model}: ${r.status} ${(data.error && data.error.message) || ''}`.slice(0, 300);
-        if (r.status === 429) return res.status(429).json({ error: 'slow_down' });
         if (r.status === 400 && /API key/i.test(lastErr)) return res.status(401).json({ error: 'bad_key' });
+        // each free-tier model has its own quota, so a 429 here is a reason to try the next one
+        if (r.status !== 429) limitedAll = false;
         continue;
       }
+      limitedAll = false;
       const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
       const reply = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim();
       if (reply) return res.status(200).json({ reply, model });
       lastErr = `${model}: empty reply`;
     } catch (e) {
       lastErr = `${model}: ${e.message}`;
+      limitedAll = false;
     }
   }
+  if (limitedAll) return res.status(429).json({ error: 'slow_down' });
   console.error('Atlas brain failed:', lastErr);
   return res.status(502).json({ error: 'upstream', detail: lastErr });
 };
