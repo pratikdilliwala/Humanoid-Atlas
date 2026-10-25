@@ -1,0 +1,1026 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#03060d"></head><body>
+<title>Atlas Humanoid</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;600&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: full-bleed particle stage; HUD pinned to the top corners; transcript + controls docked at the bottom. Single dark look by design. */
+:root{
+  --void:#03060d;
+  --ink:#d6e9ff;
+  --dim:#5d7ca3;
+  --blue:#3d9bff;
+  --ember:#ff9a3c;
+  --rule:rgba(120,180,255,.22);
+  --f-hud:"Share Tech Mono", ui-monospace, Menlo, Consolas, monospace;
+  --f-ui:"Saira Condensed", "Arial Narrow", system-ui, sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0;background:var(--void);color:var(--ink);font-family:var(--f-ui);overflow:hidden;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));
+  -webkit-tap-highlight-color:transparent;
+}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:fixed;font-family:var(--f-hud);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);pointer-events:none;display:flex;flex-direction:column;gap:6px}
+.hud.tl{top:calc(14px + env(safe-area-inset-top,0px));left:max(16px, env(safe-area-inset-left,0px))}
+.hud.tr{top:calc(14px + env(safe-area-inset-top,0px));right:max(16px, env(safe-area-inset-right,0px));align-items:flex-end;text-align:right}
+.brand{font-family:var(--f-ui);font-weight:600;font-size:18px;letter-spacing:.32em;color:var(--ink)}
+.brand span{display:block;font-family:var(--f-hud);font-weight:400;font-size:10px;letter-spacing:.2em;color:var(--dim);margin-top:2px}
+#status{position:fixed;left:0;top:0;font-size:9px;letter-spacing:.22em;color:#7cc4ff;white-space:nowrap;margin:-6px 0 0 0;will-change:transform}
+#status.hot{color:var(--ember)}
+.cam{position:relative;width:96px;aspect-ratio:4/3;max-width:100%;border:1px solid var(--rule);overflow:hidden;margin-top:6px}
+.cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:.45;filter:grayscale(1) contrast(1.2)}
+.cam i{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border:1px solid var(--ember);border-radius:50%;left:50%;top:50%;transition:left .08s linear, top .08s linear;opacity:0}
+.cam i.on{opacity:1}
+.dock{
+  position:fixed;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding-top:24px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));
+  background:linear-gradient(to top, rgba(3,6,13,.92) 55%, rgba(3,6,13,0));
+}
+.lines{width:100%;max-width:640px;display:flex;flex-direction:column;gap:4px;min-height:44px;justify-content:flex-end}
+.line{margin:0;font-size:17px;line-height:1.35;text-align:center;text-wrap:balance;color:var(--ink);min-width:0}
+.line.you{font-family:var(--f-hud);font-size:12px;letter-spacing:.06em;color:var(--dim)}
+.line.you:not(:empty)::before{content:"YOU › "}
+#wakeRow{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:420px;text-align:center}
+#wakeRow small{font-family:var(--f-hud);font-size:11px;letter-spacing:.04em;color:var(--dim);line-height:1.5}
+button{font:inherit;color:inherit;cursor:pointer}
+#wake{
+  font-family:var(--f-ui);font-weight:600;font-size:16px;letter-spacing:.3em;text-transform:uppercase;
+  padding:12px 28px;background:rgba(61,155,255,.08);border:1px solid var(--blue);color:var(--ink);
+  box-shadow:0 0 24px rgba(61,155,255,.25), inset 0 0 12px rgba(61,155,255,.15);
+}
+#wake:hover{background:rgba(61,155,255,.16)}
+#talk{width:100%;max-width:640px;display:flex;gap:8px;align-items:center}
+#msg{
+  flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:rgba(10,20,38,.8);
+  border:1px solid var(--rule);padding:11px 12px;outline:none;
+}
+#msg:focus{border-color:var(--blue)}
+#msg::placeholder{color:var(--dim)}
+#send{font-family:var(--f-ui);font-weight:600;letter-spacing:.2em;text-transform:uppercase;font-size:13px;padding:12px 14px;background:transparent;border:1px solid var(--rule)}
+#send:hover{border-color:var(--blue)}
+#mic{width:46px;height:46px;flex:none;border-radius:50%;border:1px solid var(--rule);background:rgba(10,20,38,.8);display:grid;place-items:center;position:relative}
+#mic svg{width:20px;height:20px;stroke:var(--dim);fill:none;stroke-width:1.6}
+#mic.on{border-color:var(--ember)}
+#mic.on svg{stroke:var(--ember)}
+#mic.on::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1px solid var(--ember);opacity:.5;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{from{transform:scale(.9);opacity:.6}to{transform:scale(1.25);opacity:0}}
+button:focus-visible,#msg:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){#mic.on::after{animation:none}}
+@media (max-width:420px){.line{font-size:15px}.cam{width:72px}}
+</style>
+
+<canvas id="stage" aria-label="Atlas, a humanoid figure made of light that turns to follow you"></canvas>
+
+<div class="hud tl">
+  <div class="brand">ATLAS<span>Humanoid view</span></div>
+  <div class="cam" id="camWrap" hidden><video id="cam" playsinline muted></video><i id="ret"></i></div>
+</div>
+<div class="hud tr">
+  <div id="status">Status: assembling… 0%</div>
+  <div id="track">Track: pointer</div>
+  <div id="voiceName"></div>
+</div>
+
+<div class="dock">
+  <div class="lines">
+    <p class="line" id="said" aria-live="polite"></p>
+    <p class="line you" id="heard"></p>
+  </div>
+  <div id="wakeRow">
+    <button id="wake" type="button">Wake Atlas</button>
+    <small>He uses your camera to follow your face and speaks out loud. Camera frames stay on your device.</small>
+  </div>
+  <form id="talk" hidden autocomplete="off">
+    <button type="button" id="mic" aria-label="Talk to Atlas with your voice" aria-pressed="false">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <input id="msg" type="text" placeholder="Say something to Atlas" enterkeyhint="send">
+    <button id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/Pass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const cv = $('stage');
+const video = $('cam');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v,a=0,b=1) => v<a?a:v>b?b:v;
+const gs = (a,b) => Math.exp(-(a/b)*(a/b));
+const sstep = (a,b,x) => { const t = clamp((x-a)/(b-a)); return t*t*(3-2*t); };
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+/* ---------- state shared with the voice + tracking code ---------- */
+let T = 0, last = performance.now();
+let yaw = 0, pitch = 0, tYaw = 0, tPitch = 0, lastInput = -1e9;
+let A = 0, kick = 0, speaking = false, thinking = false;
+let awake = false, wakeT = 0;
+const ASM_END = 4.6;
+const MOBILE = Math.min(innerWidth, innerHeight) < 700;
+
+/* ---------- simplex noise (2D) ---------- */
+function makeNoise(seed){
+  const r = mulberry32(seed), p = new Uint8Array(256);
+  for (let i=0;i<256;i++) p[i] = i;
+  for (let i=255;i>0;i--){ const j = Math.floor(r()*(i+1)); const t = p[i]; p[i] = p[j]; p[j] = t; }
+  const perm = new Uint8Array(512); for (let i=0;i<512;i++) perm[i] = p[i&255];
+  const G = [1,1,-1,1,1,-1,-1,-1,1,0,-1,0,0,1,0,-1];
+  const F2 = 0.5*(Math.sqrt(3)-1), G2 = (3-Math.sqrt(3))/6;
+  return (xin, yin) => {
+    const s = (xin+yin)*F2, i = Math.floor(xin+s), j = Math.floor(yin+s), t = (i+j)*G2;
+    const x0 = xin-(i-t), y0 = yin-(j-t);
+    const i1 = x0>y0 ? 1 : 0, j1 = x0>y0 ? 0 : 1;
+    const x1 = x0-i1+G2, y1 = y0-j1+G2, x2 = x0-1+2*G2, y2 = y0-1+2*G2;
+    const ii = i&255, jj = j&255;
+    let n = 0, tt, g;
+    tt = 0.5-x0*x0-y0*y0; if (tt>0){ g = (perm[ii+perm[jj]]&7)*2; tt*=tt; n += tt*tt*(G[g]*x0+G[g+1]*y0); }
+    tt = 0.5-x1*x1-y1*y1; if (tt>0){ g = (perm[ii+i1+perm[jj+j1]]&7)*2; tt*=tt; n += tt*tt*(G[g]*x1+G[g+1]*y1); }
+    tt = 0.5-x2*x2-y2*y2; if (tt>0){ g = (perm[ii+1+perm[jj+1]]&7)*2; tt*=tt; n += tt*tt*(G[g]*x2+G[g+1]*y2); }
+    return 70*n;
+  };
+}
+const N1 = makeNoise(7), N2 = makeNoise(19);
+
+/* ---------- renderer ---------- */
+let renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'high-performance' });
+} catch(e){
+  $('status').textContent = 'Status: this browser cannot run WebGL';
+}
+const PR = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 1.75);
+renderer.setPixelRatio(PR);
+renderer.setClearColor(0x010206, 1);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 400);
+const TANV = Math.tan(17.5*Math.PI/180);
+let camDist = 9, W = innerWidth, H = innerHeight;
+
+const DOT_FRAG = `
+varying vec3 vCol; varying float vA;
+void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a *= a;
+  gl_FragColor = vec4(vCol*vA*a, 1.0); }`;
+const add = { blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, depthTest: false };
+const addD = { ...add, depthTest: true };
+
+/* ---------- backdrop: near-black with a faint blue bloom behind the head ---------- */
+const skyU = { uRes:{value:new THREE.Vector2(1,1)}, uHead:{value:new THREE.Vector2(0.5,0.6)}, uWake:{value:0} };
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(2,2), new THREE.ShaderMaterial({
+  uniforms: skyU, depthTest:false, depthWrite:false,
+  vertexShader: `void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `uniform vec2 uRes; uniform vec2 uHead; uniform float uWake;
+  void main(){
+    vec2 uv = gl_FragCoord.xy/uRes; vec2 d = uv - uHead; d.x *= uRes.x/uRes.y;
+    float r = length(d);
+    vec3 col = vec3(0.004,0.008,0.022) + vec3(0.015,0.04,0.11)*exp(-r*r*5.0)*(0.6 + 0.4*uWake);
+    gl_FragColor = vec4(col, 1.0);
+  }`
+}));
+sky.frustumCulled = false; sky.renderOrder = -10;
+scene.add(sky);
+
+/* ---------- particle mountains: dotted ranges with bright ridgelines and orange energy veins ---------- */
+let TASP = 1, PEAKS = [];
+const GROUND = -3.3;
+function buildPeaks(){
+  const r = mulberry32(99);
+  PEAKS = [];
+  const layers = [[7,4],[11,5],[16,6],[23,7],[32,8],[44,8]];
+  const spread = clamp(TASP*1.5, 1, 2.8);
+  for (const [dd, n0] of layers){
+    const n = Math.round(n0*spread), d = camDist + dd, vw = d*TANV*TASP;
+    const yc = -0.2 - 0.85*(d/camDist);
+    const f = 0.18 + 0.42*sstep(camDist + 6, camDist + 40, d);
+    const Htop = Math.max(1.2, yc + f*d*TANV - GROUND);
+    for (let i=0;i<n;i++){
+      const side = i%2 ? 1 : -1, u = 0.28 + (Math.floor(i/2) + r())/Math.ceil(n/2)*0.95;
+      const H = Htop*(0.7 + r()*0.45)*(0.5 + 0.5*sstep(0.25, 0.85, u));
+      PEAKS.push({ x: side*u*vw*1.05, z: camDist - d + (r()-0.5)*5, H, rad: H*(1.4 + r()*0.7) });
+    }
+  }
+}
+function terrainH(x, z){
+  const d = camDist - z, vw = d*TANV*TASP;
+  const wx = x + 1.2*N2(x*0.08, z*0.08), wz = z + 1.2*N2(x*0.08 + 31, z*0.08 + 17);
+  let rd = 0, amp = 0.5, fr = 0.33, prev = 1, n0 = 0;
+  for (let o=0;o<4;o++){
+    let n = 1 - Math.abs(N1(wx*fr, wz*fr)); n *= n;
+    if (!o) n0 = n;
+    rd += n*amp*prev; prev = Math.min(1, n*1.4); fr *= 2.1; amp *= 0.5;
+  }
+  let best = 0, bestH = 1;
+  for (let i=0;i<PEAKS.length;i++){
+    const p = PEAKS[i], dx = x - p.x, dz = (z - p.z)*0.85;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    if (dist >= p.rad) continue;
+    const h = p.H*Math.pow(1 - dist/p.rad, 1.3)*(0.7 + 0.42*rd);
+    if (h > best){ best = h; bestH = p.H; }
+  }
+  const side = sstep(0.18*vw, 0.6*vw, Math.abs(x));
+  const foot = Math.pow(rd, 1.5)*(0.6 + 1.4*sstep(camDist + 5, camDist + 40, d))*side;
+  const h = Math.max(best, foot) + 0.12*Math.min(best, foot);
+  return [h, n0, Math.max(bestH, 1.0)];
+}
+const mtU = { uTime:{value:0}, uPx:{value:PR*2.7}, uReveal:{value:0}, uCam:{value:9}, uD0:{value:5}, uD1:{value:57} };
+const mtMat = new THREE.ShaderMaterial({ uniforms: mtU, ...addD,
+  vertexShader: `attribute vec3 aCol; attribute float aSize; attribute float aPh; attribute float aGlow;
+    uniform float uTime; uniform float uPx; uniform float uReveal; uniform float uCam; uniform float uD0; uniform float uD1;
+    varying vec3 vCol; varying float vA;
+    void main(){ vec3 p = position;
+      float k = clamp((uCam - p.z - uD0)/(uD1 - uD0), 0.0, 1.0);
+      float g = clamp(uReveal*1.5 - k*0.5, 0.0, 1.0); g = 1.0 - pow(1.0 - g, 3.0);
+      p.y -= (1.0 - g)*1.2;
+      vec4 mv = modelViewMatrix*vec4(p, 1.0); float d = -mv.z;
+      float tw = 0.75 + 0.25*sin(uTime*(1.0 + aPh*3.0) + aPh*50.0);
+      float fl = aGlow > 0.5 ? 0.45 + 0.75*abs(sin(uTime*1.8 + aPh*20.0 - p.y*3.0)) : tw;
+      vCol = aCol*fl; vA = (1.0 - 0.35*k)*g*g;
+      gl_PointSize = max(1.0, uPx*aSize*(10.0/d)); gl_Position = projectionMatrix*mv; }`,
+  fragmentShader: DOT_FRAG });
+let terrain = null, terrAspect = 0;
+function buildTerrain(){
+  const aspect = W/H;
+  terrAspect = aspect; TASP = aspect;
+  const d0 = camDist + 5, d1 = camDist + 52;
+  mtU.uCam.value = camDist; mtU.uD0.value = d0; mtU.uD1.value = d1;
+  buildPeaks();
+  const rr = mulberry32(23);
+  const N = MOBILE ? 65000 : 130000, RID = MOBILE ? 23000 : 42000, RIV = MOBILE ? 9000 : 16000, TOT = N + RID + RIV;
+  const P = new Float32Array(TOT*3), C = new Float32Array(TOT*3), S = new Float32Array(TOT), PH = new Float32Array(TOT), GL = new Float32Array(TOT);
+  let k = 0;
+  const put = (x,y,z,cr,cg,cb,s,glow) => { P[k*3]=x; P[k*3+1]=y; P[k*3+2]=z; C[k*3]=cr; C[k*3+1]=cg; C[k*3+2]=cb; S[k]=s; PH[k]=rr(); GL[k]=glow; k++; };
+  const L = [-0.55, 0.65, 0.52]; const ll = Math.hypot(...L); L[0]/=ll; L[1]/=ll; L[2]/=ll;
+  const slopeAt = (x, z, h) => { const e = 0.05; return [(terrainH(x+e, z)[0] - h)/e, (terrainH(x, z+e)[0] - h)/e]; };
+  const sampleXZ = (dMax) => { const d = d0*Math.pow(dMax/d0, rr()); return [(rr()*2-1)*d*TANV*aspect*1.12, camDist - d]; };
+  // the dotted mass of the range
+  let tries = 0;
+  while (k < N && tries < N*7){
+    tries++;
+    const [x, z] = sampleXZ(d1);
+    const [h, crest, R] = terrainH(x, z), hn = h/(R + 1e-3);
+    if (rr() > sstep(0.15, 0.9, h)*(0.45 + 0.55*sstep(0.08, 0.4, hn))) continue;
+    const [hx, hz] = slopeAt(x, z, h);
+    let nx = -hx, ny = 1, nz = -hz; const nl = Math.hypot(nx,ny,nz); nx/=nl; ny/=nl; nz/=nl;
+    const lit = Math.max(0, nx*L[0] + ny*L[1] + nz*L[2]);
+    const c8 = Math.pow(crest, 8)*sstep(0.3, 0.7, hn);
+    const b = 0.3 + 1.5*lit;
+    let cr = 0.1*b, cg = 0.36*b, cb = 1.0*b;
+    cr += 0.7*c8; cg += 0.8*c8; cb += 0.5*c8;
+    let glow = 0;
+    if (crest > 0.9 && hn > 0.35 && N2(x*0.12 + 77, z*0.12) > 0.35){ cr = 1.0; cg = 0.55; cb = 0.16; glow = 1; }
+    put(x, GROUND + h, z, cr, cg, cb, 0.95 + 0.8*c8 + rr()*0.4, glow);
+  }
+  // crisp skylines: dense bright dots along each layer's profile so every peak reads as a shape
+  const SKY = MOBILE ? 9000 : 16000; let sk = 0;
+  for (const p of PEAKS){
+    if (sk >= SKY) break;
+    for (let j=0; j<220 && sk < SKY; j++){
+      const x = p.x + (rr()*2-1)*p.rad, z = p.z + (rr()-0.5)*0.4;
+      const [h, , R] = terrainH(x, z);
+      if (h < 0.5) continue;
+      const hn = h/(R+1e-3), b = 0.35 + 0.65*sstep(0.2, 0.9, hn);
+      put(x, GROUND + h + 0.02, z, 0.35*b, 0.62*b, 1.0*b, 1.0 + 0.4*hn, 0); sk++;
+    }
+  }
+  // bright ridgelines: climb from the slopes toward the summits, tracing the ridges
+  let guard = 0;
+  while (k < N + RID && guard < 6000){
+    guard++;
+    let [x, z] = sampleXZ(d1*0.85);
+    let [h, , R] = terrainH(x, z);
+    if (h/(R+1e-3) < 0.25 || h < 0.8) continue;
+    for (let s=0; s<160 && k < N + RID; s++){
+      const [hx, hz] = slopeAt(x, z, h), g = Math.hypot(hx, hz);
+      if (g < 0.05) break;
+      x += hx/g*0.04; z += hz/g*0.04;
+      const h2 = terrainH(x, z)[0];
+      if (h2 <= h) break;
+      h = h2;
+      const t = s/160;
+      put(x, GROUND + h + 0.02, z, 0.55 + 0.45*t, 0.8 + 0.2*t, 1.0, 1.2 + 0.6*t, 0);
+    }
+  }
+  // orange energy veins running down the slopes
+  guard = 0;
+  while (k < TOT && guard < 6000){
+    guard++;
+    let [x, z] = sampleXZ(d0 + 30);
+    let [h, , R] = terrainH(x, z);
+    if (h/(R+1e-3) < 0.45 || Math.abs(x) < 0.3*(camDist - z)*TANV*aspect) continue;
+    for (let s=0; s<190 && k < TOT; s++){
+      const [hx, hz] = slopeAt(x, z, h), g = Math.hypot(hx, hz) + 1e-4;
+      x -= hx/g*0.04 + (rr()-0.5)*0.025; z -= hz/g*0.04 + (rr()-0.5)*0.025;
+      h = terrainH(x, z)[0];
+      if (h < 0.3) break;
+      const fade = 1 - s/190;
+      put(x, GROUND + h + 0.03, z, 1.0*fade + 0.1, 0.5*fade + 0.05, 0.12*fade, 1.15 + rr()*0.4, 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P.subarray(0,k*3),3));
+  g.setAttribute('aCol', new THREE.BufferAttribute(C.subarray(0,k*3),3));
+  g.setAttribute('aSize', new THREE.BufferAttribute(S.subarray(0,k),1));
+  g.setAttribute('aPh', new THREE.BufferAttribute(PH.subarray(0,k),1));
+  g.setAttribute('aGlow', new THREE.BufferAttribute(GL.subarray(0,k),1));
+  if (terrain){ scene.remove(terrain); terrain.geometry.dispose(); }
+  terrain = new THREE.Points(g, mtMat); terrain.frustumCulled = false;
+  scene.add(terrain);
+}
+
+/* ---------- the humanoid ---------- */
+const R = mulberry32(42);
+const lerpPts = (P, y) => {
+  for (let i=0;i<P.length-1;i++){
+    const [y0,v0] = P[i], [y1,v1] = P[i+1];
+    if (y <= y0 && y >= y1){ const t = (y0-y)/(y0-y1), e = (1-Math.cos(t*Math.PI))/2; return v0 + (v1-v0)*e; }
+  }
+  return P[P.length-1][1];
+};
+const crown = y => y > 0.3 ? Math.sqrt(Math.max(0, 1-((y-0.3)/0.7)**2)) : 1;
+const W_PTS  = [[0.3,0.63],[-0.05,0.63],[-0.4,0.59],[-0.62,0.52],[-0.8,0.43],[-0.92,0.28],[-0.99,0.05]];
+const DF_PTS = [[0.3,0.72],[-0.1,0.72],[-0.5,0.68],[-0.85,0.65],[-0.99,0.4]];
+const DB_PTS = [[0.3,0.86],[0.0,0.84],[-0.5,0.42],[-0.98,0.22]];
+const headW  = y => y > 0.3 ? 0.62*crown(y) : lerpPts(W_PTS, y);
+const headDF = y => y > 0.3 ? 0.72*crown(y) : lerpPts(DF_PTS, y);
+const headDB = y => y > 0.3 ? 0.86*crown(y) : lerpPts(DB_PTS, y);
+// a smooth, mask-like face: only soft hints of brow, nose and chin
+function headAt(y, th){
+  const w = headW(y), df = headDF(y), db = headDB(y);
+  const c = Math.cos(th), s = Math.sin(th);
+  const ear = 0.06*gs(Math.abs(th)-1.57,0.16)*gs(y-0.02,0.15);
+  const x = (w+ear)*s;
+  let z = c*(c>0 ? df : db);
+  if (c>0){
+    z += gs(th,0.2)*(0.09*gs(y+0.2,0.14) + 0.04*gs(y+0.02,0.17));
+    z += 0.065*gs(th,0.75)*gs(y-0.19,0.07);
+    z -= 0.035*(gs(th-0.45,0.2)+gs(th+0.45,0.2))*gs(y-0.08,0.1);
+    z += 0.05*gs(th,0.6)*gs(y+0.82,0.11);
+    z += 0.03*(gs(th-0.55,0.22)+gs(th+0.55,0.22))*gs(y+0.62,0.1);
+  }
+  const f = Math.pow(Math.max(0,c),1.6)*gs(y+0.1,0.5)*gs(th,0.85);
+  const m = c>0 ? gs(th,0.35)*gs(y+0.5,0.1) : 0;
+  const ny = y > 0.35 ? Math.pow((y-0.35)/0.65,1.5)*1.8 : (y < -0.75 ? -0.35 : 0);
+  return [x, z, f, m, s/(w+0.05), ny, c/((c>0?df:db)+0.05), w];
+}
+const NODE = [0, -1.55, 0.44];   // glowing chest node: the figure spirals out of it
+function Part(yOff){ return { yOff, pos:[], start:[], norm:[], delay:[], face:[], mouth:[], seed:[], fade:[], idx:[], rings:[] }; }
+function addV(P, x,y,z, nx,ny,nz, f,m, fade){
+  P.pos.push(x, y + P.yOff, z);
+  P.start.push(NODE[0], NODE[1] + P.yOff, NODE[2]);
+  const l = Math.hypot(nx,ny,nz) || 1; P.norm.push(nx/l, ny/l, nz/l);
+  P.delay.push(R()*0.9 + (y+2.45)/3.45*1.9);
+  P.face.push(f); P.mouth.push(m); P.seed.push(R()); P.fade.push(fade);
+  return P.pos.length/3 - 1;
+}
+function ringIdx(P, s0, n){ P.rings.push([s0, n]); for (let i=0;i<n;i++) P.idx.push(s0+i, s0+(i+1)%n); }
+const head = Part(0.8), neck = Part(1.3), torso = Part(1.6);
+const HR = MOBILE ? 56 : 70, HM = MOBILE ? 170 : 220;
+for (let r=0;r<HR;r++){
+  const y = 0.98 - r*(1.93/(HR-1));
+  if (headW(y) < 0.02) continue;
+  const s0 = head.pos.length/3;
+  for (let i=0;i<HM;i++){
+    const th = -Math.PI + i*2*Math.PI/HM;
+    const [x,z,f,m,nx,ny,nz] = headAt(y, th);
+    addV(head, x,y,z, nx,ny,nz, f,m, 1);
+  }
+  ringIdx(head, s0, HM);
+}
+const headRingEnd = head.pos.length/3;
+for (let i=0;i<(MOBILE?4000:7000);i++){
+  const y = 0.98 - R()*1.93, th = -Math.PI + R()*2*Math.PI;
+  if (headW(y) < 0.02) continue;
+  const [x,z,f,m,nx,ny,nz] = headAt(y, th), o = 1 + R()*0.02;
+  addV(head, x*o, y, z*o, nx,ny,nz, f,m, 0.7);
+}
+const NR = 16, NM = 110;
+const neckAt = (y, r) => { const fl = 0.18*Math.pow(clamp((-0.78-y)/0.62),2.6); return [0.38+fl, 0.32+fl*0.45]; };
+for (let r=0;r<NR;r++){
+  const y = -0.78 - r*(0.62/(NR-1)), s0 = neck.pos.length/3, [rx, rz] = neckAt(y);
+  for (let i=0;i<NM;i++){
+    const th = -Math.PI + i*2*Math.PI/NM, s = Math.sin(th), c = Math.cos(th);
+    addV(neck, rx*s, y, -0.1+rz*c, s, 0, c, 0,0, 1);
+  }
+  ringIdx(neck, s0, NM);
+}
+const torsoAt = y => {
+  const s = clamp((-1.3-y)/0.5), e = Math.pow(Math.sin(s*Math.PI/2),0.7);
+  return [0.5 + 1.12*e + 0.05*clamp((-1.9-y)/0.5), 0.38 + 0.2*e, y < -1.9 ? clamp((y+2.45)/0.55) : 1, s];
+};
+const TR = MOBILE ? 28 : 34, TM = MOBILE ? 200 : 260;
+for (let r=0;r<TR;r++){
+  const y = -1.3 - r*(1.15/(TR-1)), [w,d,af,s] = torsoAt(y), s0 = torso.pos.length/3;
+  for (let i=0;i<TM;i++){
+    const th = -Math.PI + i*2*Math.PI/TM, sn = Math.sin(th), c = Math.cos(th);
+    addV(torso, w*sn, y, -0.05+d*c, sn/w, (1-s)*0.9, c/d, 0,0, af);
+  }
+  ringIdx(torso, s0, TM);
+}
+for (let i=0;i<(MOBILE?2500:4500);i++){
+  const y = -1.3 - R()*1.15, [w,d,af,s] = torsoAt(y), th = -Math.PI + R()*2*Math.PI, sn = Math.sin(th), c = Math.cos(th);
+  addV(torso, w*sn, y, -0.05+d*c, sn/w, (1-s)*0.9, c/d, 0,0, af*0.7);
+}
+
+const figU = { uTime:{value:0}, uAsm:{value:0}, uAmp:{value:0}, uPx:{value:PR*1.6}, uLine:{value:0} };
+const FIG_VERT = `attribute vec3 aStart; attribute vec3 aNorm; attribute float aDelay; attribute float aFace; attribute float aMouth; attribute float aSeed; attribute float aFade;
+  uniform float uTime; uniform float uAsm; uniform float uAmp; uniform float uPx; uniform float uLine;
+  varying vec3 vCol; varying float vA;
+  void main(){
+    float e = clamp((uAsm - aDelay)/1.5, 0.0, 1.0); e = 1.0 - pow(1.0-e, 3.0);
+    vec3 p = position;
+    p.y += aFace*(0.010*sin(p.x*16.0 + uTime*1.6) + uAmp*0.03*sin(p.x*22.0 - uTime*14.0));
+    p.y += aMouth*uAmp*0.03*sin(uTime*28.0 + p.x*9.0);
+    // spiral out of the chest node: a rising, widening vortex that settles into place
+    float sw = 1.0 - e;
+    float ang = sw*9.0 + aSeed*6.2832;
+    vec3 q = mix(aStart, p, e);
+    q += vec3(cos(ang), 0.15*sin(ang*0.5), sin(ang))*sin(e*3.14159)*(0.55 + 0.6*aSeed);
+    vec4 mv = modelViewMatrix*vec4(q, 1.0);
+    vec3 n = normalize(normalMatrix*aNorm);
+    float nz = n.z;
+    float front = nz > 0.0 ? 0.18 + 0.6*pow(nz, 0.9) : 0.04;
+    float rim = exp(-nz*nz/0.05);
+    float br = max(front, rim*1.5);
+    float fc = aFace*smoothstep(0.0, 0.35, nz);
+    float heat = smoothstep(0.08, 0.5, fc*(1.0 + 0.6*uAmp));
+    vec3 col = mix(vec3(0.16,0.5,1.0), vec3(0.6,0.92,1.0), rim);
+    col = mix(col, vec3(1.0,0.55,0.13), heat);
+    float boost = 1.0 + heat*(1.6 + 1.6*uAmp);
+    vCol = col;
+  #ifdef LINES
+    vA = br*boost*aFade*uLine*pow(e, 4.0)*0.55;
+  #else
+    vA = br*boost*aFade*(0.8 + 0.2*sin(uTime*2.0 + aSeed*30.0))*(e < 1.0 ? 1.0 : 0.5);
+    gl_PointSize = uPx*(0.6 + aSeed*0.9)*(9.0/-mv.z)*(e < 1.0 ? 1.4 : 1.0);
+  #endif
+    gl_Position = projectionMatrix*mv;
+  }`;
+const figPts = new THREE.ShaderMaterial({ uniforms: figU, ...addD, vertexShader: FIG_VERT, fragmentShader: DOT_FRAG });
+const figLines = new THREE.ShaderMaterial({ uniforms: figU, ...addD, defines:{ LINES:'' }, vertexShader: FIG_VERT,
+  fragmentShader: `varying vec3 vCol; varying float vA; void main(){ gl_FragColor = vec4(vCol*vA, 1.0); }` });
+// neon shell: a solid black body with a glowing fresnel edge. It hides the far side of the figure and the
+// mountains behind it, which gives the clean silhouette from the reel.
+const shellMat = new THREE.ShaderMaterial({ uniforms: figU, side: THREE.DoubleSide,
+  vertexShader: `varying vec3 vN; varying vec3 vV; varying float vY;
+    void main(){ vec4 mv = modelViewMatrix*vec4(position, 1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz);
+      vY = (modelMatrix*vec4(position,1.0)).y; gl_Position = projectionMatrix*mv; }`,
+  fragmentShader: `uniform float uLine; varying vec3 vN; varying vec3 vV; varying float vY;
+    void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+      float edge = pow(f, 5.0)*smoothstep(-2.45, -1.95, vY);
+      vec3 col = vec3(0.004,0.012,0.035) + vec3(0.3,0.8,1.0)*edge*2.4*uLine;
+      gl_FragColor = vec4(col, 1.0); }` });
+function shellPart(P, group, upTo, cap){
+  const pos = [], idx = [], src = P.pos, rings = P.rings;
+  const k = 0.975;
+  for (let i=0;i<upTo;i++){ const x = src[i*3], y = src[i*3+1], z = src[i*3+2]; pos.push(x*k, y, z*k + (1-k)*(-0.08)); }
+  for (let r=0;r<rings.length-1;r++){
+    const [a0, n] = rings[r], [b0, m] = rings[r+1];
+    if (n !== m) continue;
+    for (let i=0;i<n;i++){ const a = a0+i, b = a0+(i+1)%n, c = b0+i, d = b0+(i+1)%n; idx.push(a, c, b, b, c, d); }
+  }
+  if (cap){ const [a0, n] = rings[0]; const ci = pos.length/3; pos.push(0, src[a0*3+1] + 0.02, 0); for (let i=0;i<n;i++) idx.push(ci, a0+i, a0+(i+1)%n); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, shellMat); m.frustumCulled = false; m.renderOrder = -2;
+  group.add(m); return m;
+}
+function buildPart(P, group){
+  const g = new THREE.BufferGeometry();
+  const at = { position:[P.pos,3], aStart:[P.start,3], aNorm:[P.norm,3], aDelay:[P.delay,1], aFace:[P.face,1], aMouth:[P.mouth,1], aSeed:[P.seed,1], aFade:[P.fade,1] };
+  const attrs = {};
+  for (const k in at){ attrs[k] = new THREE.BufferAttribute(new Float32Array(at[k][0]), at[k][1]); g.setAttribute(k, attrs[k]); }
+  const lg = new THREE.BufferGeometry();
+  for (const k in attrs) lg.setAttribute(k, attrs[k]);
+  lg.setIndex(P.idx);
+  const pts = new THREE.Points(g, figPts), lines = new THREE.LineSegments(lg, figLines);
+  pts.frustumCulled = lines.frustumCulled = false;
+  group.add(lines, pts);
+}
+const fig = new THREE.Group(); scene.add(fig);
+const headG = new THREE.Group(), neckG = new THREE.Group(), torsoG = new THREE.Group();
+headG.position.y = -0.8; neckG.position.y = -1.3; torsoG.position.y = -1.6;
+[headG, neckG, torsoG].forEach(g => { g.rotation.order = 'YXZ'; fig.add(g); });
+buildPart(head, headG); buildPart(neck, neckG); buildPart(torso, torsoG);
+const shells = [shellPart(head, headG, headRingEnd, true), shellPart(neck, neckG, neck.pos.length/3, false), shellPart(torso, torsoG, TR*TM, false)];
+
+// glow sprites
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'), g = x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.25,'rgba(255,255,255,0.45)'); g.addColorStop(0.6,'rgba(255,255,255,0.1)'); g.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+})();
+function glow(color, scale, opacity, parent, x, y, z){
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, opacity, blending: THREE.AdditiveBlending, depthWrite:false, depthTest:false, transparent:true }));
+  s.scale.set(scale, scale, 1); s.position.set(x, y, z); parent.add(s); return s;
+}
+const faceGlow = glow(0xff7a1a, 1.25, 0.5, headG, 0, 0.72, 0.7);
+const faceCore = glow(0xff9a40, 0.6, 0.25, headG, 0, 0.74, 0.75);
+const orbCore = glow(0xdff2ff, 0.26, 1.0, torsoG, NODE[0], NODE[1] + 1.6, NODE[2] + 0.05);
+const orbHalo = glow(0x3d8bff, 0.9, 0.5, torsoG, NODE[0], NODE[1] + 1.6, NODE[2]);
+
+// orange nerves: smooth branching curves from the chest node up the neck to the jaw, with pulses of
+// energy flowing upward along them (brighter while he speaks)
+const neckSurfZ = (x, y) => { const [rx, rz] = neckAt(y); return -0.1 + rz*Math.sqrt(Math.max(0, 1 - (x/rx)**2)) + 0.015; };
+const chestSurfZ = (x, y) => { const [w, d] = torsoAt(y); const xc = clamp(x/w, -1, 1); return -0.05 + d*Math.sqrt(Math.max(0, 1 - xc*xc)) + 0.015; };
+const surfZ = (x, y) => y > -1.38 ? neckSurfZ(x, y) : Math.max(chestSurfZ(x, y), y > -1.45 ? neckSurfZ(x, y) : -9);
+const nerveU = { uTime:{value:0}, uAmp:{value:0}, uA:{value:0}, uPx:{value:PR*1.6} };
+const nervePos = [], nerveT = [], nerveSeed = [], nerveIdx = [];
+function addNerve(ctrl, t0, t1, seed){
+  const curve = new THREE.CatmullRomCurve3(ctrl.map(([x,y]) => new THREE.Vector3(x, y, 0)), false, 'centripetal');
+  const pts = curve.getPoints(48), base = nervePos.length/3;
+  pts.forEach((p, i) => {
+    nervePos.push(p.x, p.y + 1.3, surfZ(p.x, p.y));
+    nerveT.push(t0 + (t1 - t0)*i/(pts.length-1)); nerveSeed.push(seed);
+    if (i) nerveIdx.push(base + i - 1, base + i);
+  });
+  return pts;
+}
+for (let v=0; v<10; v++){
+  const side = v%2 ? 1 : -1, k = (v>>1)/4, spread = 0.05 + k*0.24, seed = R();
+  const wob = () => (R()-0.5)*0.03;
+  const trunk = addNerve([
+    [NODE[0], NODE[1]],
+    [side*(0.02 + k*0.05), -1.44],
+    [side*spread*0.45 + wob(), -1.25],
+    [side*spread*0.8 + wob(), -1.04],
+    [side*spread*(1.0 + R()*0.1), -0.84 + R()*0.03]
+  ], 0, 1, seed);
+  if (k > 0.2){
+    for (let b=0; b<2; b++){
+      const i = 18 + Math.floor(R()*18), p = trunk[i], dir = side*(0.6 + R()*0.6);
+      addNerve([[p.x, p.y], [p.x + dir*0.05, p.y + 0.06], [p.x + dir*0.08 + wob(), p.y + 0.14]], i/48, i/48 + 0.25, seed);
+    }
+  }
+}
+for (let v=0; v<6; v++){
+  const side = v%2 ? 1 : -1, ang = 0.2 + (v>>1)*0.35;
+  addNerve([[NODE[0], NODE[1]], [side*0.12*Math.cos(ang), NODE[1] - 0.05*Math.sin(ang)], [side*0.3*Math.cos(ang), NODE[1] - 0.16*Math.sin(ang) + 0.04], [side*0.5*Math.cos(ang), NODE[1] - 0.28*Math.sin(ang) + 0.07]], 0, 0.7, R());
+}
+const NERVE_VERT = `attribute float aT; attribute float aSeed; uniform float uTime; uniform float uAmp; uniform float uA; uniform float uPx;
+  varying vec3 vCol; varying float vA;
+  void main(){
+    float speed = 0.45 + 0.6*uAmp;
+    float ph = fract(aT*1.6 - uTime*speed + aSeed*7.0);
+    float pulse = exp(-pow((ph - 0.5)/0.07, 2.0));
+    float ph2 = fract(aT*1.6 - uTime*speed + aSeed*7.0 + 0.5);
+    pulse += 0.5*exp(-pow((ph2 - 0.5)/0.05, 2.0));
+    float glow = 0.55 + 1.5*pulse*(0.7 + 0.6*uAmp);
+    vCol = mix(vec3(1.0,0.45,0.08), vec3(1.0,0.85,0.55), clamp(pulse, 0.0, 1.0));
+    vA = glow*uA*(1.0 - 0.35*aT);
+    vec4 mv = modelViewMatrix*vec4(position, 1.0);
+  #ifndef LINES
+    vA *= pulse;
+    gl_PointSize = uPx*(1.2 + 2.2*pulse)*(9.0/-mv.z);
+  #endif
+    gl_Position = projectionMatrix*mv;
+  }`;
+const nerveGeo = new THREE.BufferGeometry();
+nerveGeo.setAttribute('position', new THREE.Float32BufferAttribute(nervePos, 3));
+nerveGeo.setAttribute('aT', new THREE.Float32BufferAttribute(nerveT, 1));
+nerveGeo.setAttribute('aSeed', new THREE.Float32BufferAttribute(nerveSeed, 1));
+const nerveLineGeo = nerveGeo.clone(); nerveLineGeo.setIndex(nerveIdx);
+const nerveLines = new THREE.LineSegments(nerveLineGeo, new THREE.ShaderMaterial({ uniforms: nerveU, ...add, defines:{ LINES:'' }, vertexShader: NERVE_VERT,
+  fragmentShader: `varying vec3 vCol; varying float vA; void main(){ gl_FragColor = vec4(vCol*vA, 1.0); }` }));
+const nerveSparks = new THREE.Points(nerveGeo, new THREE.ShaderMaterial({ uniforms: nerveU, ...add, vertexShader: NERVE_VERT, fragmentShader: DOT_FRAG }));
+nerveLines.frustumCulled = nerveSparks.frustumCulled = false;
+neckG.add(nerveLines, nerveSparks);
+
+// fine hair-like particles around the crown
+const dustU = { uTime:{value:0}, uPx:{value:PR*1.5}, uA:{value:0} };
+{
+  const n = MOBILE ? 1400 : 2400, dir = new Float32Array(n*3), r0 = new Float32Array(n), sp = new Float32Array(n), ph = new Float32Array(n);
+  for (let i=0;i<n;i++){
+    let dx,dy,dz,l;
+    do { dx=R()*2-1; dy=R()*2-1; dz=R()*2-1; l=Math.hypot(dx,dy,dz); } while (l>1 || l<0.1 || (dy/l < 0.0 && R()<0.9));
+    dir[i*3]=dx/l*0.72; dir[i*3+1]=dy/l*1.05; dir[i*3+2]=dz/l*0.85; r0[i]=0.98+R()*0.1; sp[i]=0.02+R()*0.06; ph[i]=R();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(dir,3));
+  g.setAttribute('aR0', new THREE.BufferAttribute(r0,1)); g.setAttribute('aSp', new THREE.BufferAttribute(sp,1)); g.setAttribute('aPh', new THREE.BufferAttribute(ph,1));
+  const p = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: dustU, ...add,
+    vertexShader: `attribute float aR0; attribute float aSp; attribute float aPh; uniform float uTime; uniform float uPx; uniform float uA; varying vec3 vCol; varying float vA;
+      void main(){ float fr = fract(uTime*aSp + aPh); vec3 p = vec3(0.0, 0.82, 0.0) + position*(aR0 + fr*0.22);
+        vec4 mv = modelViewMatrix*vec4(p,1.0); vCol = vec3(0.45,0.78,1.0);
+        vA = sin(3.14159*fr)*0.7*uA; gl_PointSize = uPx*(0.6 + aPh*0.8)*(9.0/-mv.z); gl_Position = projectionMatrix*mv; }`,
+    fragmentShader: DOT_FRAG }));
+  p.frustumCulled = false; headG.add(p);
+}
+
+/* ---------- speaking rings ---------- */
+const ringsG = new THREE.Group(); ringsG.position.set(0, 0.0, -0.6); scene.add(ringsG);
+const ringMats = [];
+const circle = (r, seg=180) => { const p = []; for (let i=0;i<=seg;i++){ const a = i/seg*Math.PI*2; p.push(Math.cos(a)*r, Math.sin(a)*r, 0); } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p,3)); return g; };
+for (let i=0;i<8;i++){
+  const m = new THREE.LineBasicMaterial({ color:0x7cc4ff, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:false });
+  ringMats.push(m); ringsG.add(new THREE.Line(circle(1.05 + i*0.12), m));
+}
+let ringAmt = 0;
+
+/* ---------- post-processing ---------- */
+const composer = new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene, camera));
+const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 1.05, 0.5, 0.22);
+composer.addPass(bloom);
+const finish = new THREE.ShaderPass({
+  uniforms: { tDiffuse:{value:null}, uTime:{value:0} },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+    void main(){ vec2 c = vUv - 0.5; float r = dot(c,c); vec2 off = c*r*0.01;
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      col *= 1.0 - 0.45*r*2.0;
+      float g = fract(sin(dot(vUv*vec2(1271.3,311.7) + fract(uTime)*91.0, vec2(12.9898,78.233)))*43758.5453);
+      col += (g - 0.5)*0.02;
+      gl_FragColor = vec4(col, 1.0); }`
+});
+composer.addPass(finish);
+
+/* ---------- sizing ---------- */
+let resizeTO = 0;
+function resize(){
+  W = innerWidth; H = innerHeight;
+  renderer.setSize(W, H, false);
+  composer.setPixelRatio && composer.setPixelRatio(PR);
+  composer.setSize(W, H);
+  bloom.resolution.set(W, H);
+  camera.aspect = W/H;
+  camDist = Math.max(8.4, 1.72/(TANV*camera.aspect));
+  camera.updateProjectionMatrix();
+  skyU.uRes.value.set(W*PR, H*PR);
+  if (!terrain || Math.abs(W/H - terrAspect)/terrAspect > 0.3){
+    clearTimeout(resizeTO);
+    if (!terrain) buildTerrain(); else resizeTO = setTimeout(buildTerrain, 300);
+  }
+}
+addEventListener('resize', resize);
+resize();
+
+/* ---------- frame ---------- */
+const tmpV = new THREE.Vector3();
+const statusTag = $('status');
+function draw(){
+  const t = T;
+  headG.rotation.set(pitch, yaw, 0);
+  neckG.rotation.set(pitch*0.35, yaw*0.4, 0);
+  torsoG.rotation.set(pitch*0.04, yaw*0.1, 0);
+  torsoG.position.y = -1.6 + 0.01*Math.sin(t*1.2);
+
+  const camX = -yaw*0.25;
+  camera.position.set(camX, -0.2 + pitch*0.08, camDist);
+  camera.lookAt(camX*0.25, -1.05, 0);
+
+  const la = REDUCE ? 1 : clamp((t-3.0)/1.4);
+  const wa = awake ? clamp((t - wakeT)/(REDUCE ? 0.01 : 1.5)) : 0;
+  figU.uTime.value = t; figU.uAsm.value = REDUCE ? 99 : t; figU.uAmp.value = A; figU.uLine.value = la;
+  shells.forEach(s => { s.visible = la > 0.02; });
+  dustU.uTime.value = t; dustU.uA.value = la;
+  mtU.uTime.value = t; mtU.uReveal.value = REDUCE ? 1 : clamp((t-3.2)/2.4);
+  finish.uniforms.uTime.value = t;
+
+  faceGlow.material.opacity = (0.45 + 0.55*A + 0.06*Math.sin(t*1.7))*la;
+  faceGlow.scale.setScalar(1.25 + 0.25*A);
+  faceCore.material.opacity = (0.15 + 0.5*A)*la;
+  const pulse = 0.5 + 0.5*Math.sin(t*2.3);
+  orbCore.material.opacity = 0.85 + 0.15*pulse;
+  orbHalo.material.opacity = 0.35 + 0.25*pulse + 0.3*A;
+  orbHalo.scale.setScalar(0.8 + 0.15*pulse + 0.3*A);
+  nerveU.uTime.value = t; nerveU.uAmp.value = A; nerveU.uA.value = la;
+
+  ringAmt += ((speaking ? 1 : 0) - ringAmt)*0.06;
+  const wave = (t*0.55)%1;
+  ringMats.forEach((m,i) => { const ph = i/8; m.opacity = ringAmt*(0.05 + 0.4*gs(ph - wave, 0.1) + 0.25*A*gs(ph - wave, 0.2))*la; });
+
+  tmpV.set(0, 0.05, 0).project(camera);
+  skyU.uHead.value.set(tmpV.x*0.5+0.5, tmpV.y*0.5+0.5);
+  skyU.uWake.value = wa;
+  tmpV.set(0.95, 0.55, 0).project(camera);
+  let tx = (tmpV.x*0.5+0.5)*W, ty = (0.5-tmpV.y*0.5)*H;
+  if (tx + statusTag.offsetWidth > W - 16){
+    tmpV.set(0, 1.25, 0).project(camera);
+    tx = (tmpV.x*0.5+0.5)*W - statusTag.offsetWidth/2; ty = (0.5-tmpV.y*0.5)*H;
+  }
+  statusTag.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px)`;
+
+  composer.render();
+}
+
+/* ---------- HUD ---------- */
+const statusEl = $('status'), trackEl = $('track');
+let statusTxt = '';
+function setStatus(s){ statusTxt = s; }
+function setTrack(s){ trackEl.textContent = 'Track: ' + s; }
+let shownStatus = '';
+function hudTick(){
+  let s;
+  if (!REDUCE && T < ASM_END) s = 'Status: assembling… ' + Math.round(clamp(T/ASM_END)*100) + '%';
+  else s = 'Status: ' + (statusTxt || (awake ? 'listening' : 'standby'));
+  if (s !== shownStatus){ statusEl.textContent = s; statusEl.classList.toggle('hot', /speaking|thinking/.test(s)); shownStatus = s; }
+}
+
+/* ---------- tracking ---------- */
+let mode = 'pointer', detector = null, lastDet = 0, faceT = -1e9, faceGoneSaid = false, hadFace = false, lastRemark = -1e9;
+const ret = $('ret');
+function aimAt(cx, cy, fromCam){
+  tYaw = clamp((0.5-cx)*0.9, -0.45, 0.45);
+  tPitch = clamp((cy-0.45)*0.6, -0.22, 0.25);
+  lastInput = performance.now();
+  if (fromCam){ ret.style.left = ((1-cx)*100)+'%'; ret.style.top = (cy*100)+'%'; ret.classList.add('on'); }
+}
+addEventListener('pointermove', e => {
+  if (performance.now() - faceT < 1500) return;
+  tYaw = clamp((e.clientX/W - 0.5)*0.85, -0.45, 0.45);
+  tPitch = clamp((e.clientY/H - 0.42)*0.5, -0.22, 0.25);
+  lastInput = performance.now();
+});
+async function loadDetector(){
+  const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const vis = await import(base + '/vision_bundle.mjs');
+  const fs = await vis.FilesetResolver.forVisionTasks(base + '/wasm');
+  const opts = d => ({ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite', delegate:d }, runningMode:'VIDEO', minDetectionConfidence:0.5 });
+  try { return await vis.FaceDetector.createFromOptions(fs, opts('GPU')); }
+  catch(e){ return await vis.FaceDetector.createFromOptions(fs, opts('CPU')); }
+}
+async function startCamera(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ setTrack('pointer'); return; }
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:640}, height:{ideal:480} }, audio:false });
+    video.srcObject = st; await video.play();
+    $('camWrap').hidden = false;
+    mode = 'motion'; setTrack('motion');
+    try { detector = await loadDetector(); mode = 'face'; setTrack('face'); }
+    catch(e){ console.warn('Face detector unavailable, using motion tracking', e); }
+  } catch(e){
+    setTrack('pointer · camera off');
+  }
+}
+const mc = document.createElement('canvas'); mc.width = 48; mc.height = 36;
+const mctx = mc.getContext('2d', { willReadFrequently:true });
+let prevFrame = null, mx = 0.5, my = 0.45;
+function motionStep(){
+  mctx.drawImage(video, 0, 0, 48, 36);
+  const d = mctx.getImageData(0,0,48,36).data, cur = new Uint8Array(48*36);
+  let sx=0, sy=0, n=0;
+  for (let i=0;i<cur.length;i++){
+    const v = (d[i*4] + d[i*4+1]*2 + d[i*4+2]) >> 2; cur[i] = v;
+    if (prevFrame && Math.abs(v-prevFrame[i]) > 28){ sx += i%48; sy += (i/48)|0; n++; }
+  }
+  prevFrame = cur;
+  if (n > 12){ mx += (sx/n/48 - mx)*0.3; my += (sy/n/36 - my)*0.3; aimAt(mx, my, true); faceT = performance.now(); }
+}
+function trackStep(now){
+  if (!video.srcObject || video.readyState < 2) return;
+  if (mode === 'face' && detector && now - lastDet > 33){
+    lastDet = now;
+    try {
+      const res = detector.detectForVideo(video, now);
+      const d = res.detections && res.detections[0];
+      if (d){
+        const bb = d.boundingBox, vw = video.videoWidth, vh = video.videoHeight;
+        aimAt((bb.originX + bb.width/2)/vw, (bb.originY + bb.height/2)/vh, true);
+        if (awake && hadFace === false && now - faceT > 5000 && faceT > 0 && !speaking && now - lastRemark > 15000){ lastRemark = now; say(pick(['There you are.','Ah. Welcome back.','I see you again.'])); }
+        faceT = now; hadFace = true; faceGoneSaid = false;
+      } else {
+        ret.classList.remove('on');
+        if (hadFace && now - faceT > 1200) hadFace = false;
+        if (awake && !faceGoneSaid && faceT > 0 && now - faceT > 7000 && !speaking && !thinking && now - lastRemark > 15000){ faceGoneSaid = true; lastRemark = now; say('Where did you go?'); }
+      }
+    } catch(e){}
+  } else if (mode === 'motion' && now - lastDet > 50){ lastDet = now; motionStep(); }
+}
+
+/* ---------- voice out ---------- */
+const synth = window.speechSynthesis || null;
+let voice = null, sayTO = 0;
+const PREF = [/Google UK English Male/i, /Microsoft (Guy|Davis|Christopher|Eric|Andrew|Brian|Roger|Ravi|Prabhat|David|Mark)/i, /\b(Daniel|Rishi|Arthur|Aaron|Fred|Gordon|Alex|Ralph|Reed|Rocko|Thomas|Oliver)\b/i, /\bmale\b/i];
+function pickVoice(){
+  if (!synth) return;
+  const vs = synth.getVoices();
+  if (!vs.length) return;
+  voice = null;
+  for (const re of PREF){ const v = vs.find(v => re.test(v.name) && /^en/i.test(v.lang)); if (v){ voice = v; break; } }
+  if (!voice) voice = vs.find(v => /^en[-_]IN/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)) || vs[0];
+  $('voiceName').textContent = voice ? 'Voice: ' + voice.name.slice(0,24) : '';
+}
+if (synth){ pickVoice(); synth.addEventListener && synth.addEventListener('voiceschanged', pickVoice); }
+const saidEl = $('said'), heardEl = $('heard');
+// Atlas's own voice (ElevenLabs, through /api/speak) with the browser voice as a fallback.
+let actx = null, analyser = null, ampBuf = null, srcNode = null, cloudVoice = true, usingCloud = false, sayId = 0;
+function unlockAudio(){
+  try {
+    if (!actx){
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = actx.createAnalyser(); analyser.fftSize = 512; ampBuf = new Uint8Array(analyser.fftSize);
+      analyser.connect(actx.destination);
+    }
+    if (actx.state === 'suspended') actx.resume();
+  } catch(e){ actx = null; }
+}
+function cloudAmp(){
+  if (!analyser) return 0;
+  analyser.getByteTimeDomainData(ampBuf);
+  let s = 0; for (let i=0;i<ampBuf.length;i++){ const v = (ampBuf[i]-128)/128; s += v*v; }
+  return clamp(Math.sqrt(s/ampBuf.length)*5.5);
+}
+async function cloudSpeak(text){
+  if (!cloudVoice || !actx || !/^https?:$/.test(location.protocol) || (window.claude && typeof window.claude.use === 'function')) return null;
+  try {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
+    const r = await fetch('/api/speak', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ text }), signal: ctl.signal });
+    clearTimeout(to);
+    if (!r.ok){ if (r.status === 404 || r.status === 503 || r.status === 401) cloudVoice = false; return null; }
+    const bytes = await r.arrayBuffer();
+    return await new Promise((ok, no) => actx.decodeAudioData(bytes, ok, no));
+  } catch(e){ return null; }
+}
+function browserSay(text, done){
+  if (!synth){ sayTO = setTimeout(done, 800 + text.length*60); return; }
+  try {
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) u.voice = voice;
+    u.pitch = 0.55; u.rate = 0.9; u.volume = 1;
+    u.onboundary = () => { kick = 1; };
+    u.onend = done; u.onerror = done;
+    synth.speak(u);
+    const guard = () => { if (!speaking) return; if (synth.speaking || synth.pending) sayTO = setTimeout(guard, 800); else done(); };
+    sayTO = setTimeout(guard, 1200 + text.length*70);
+  } catch(e){ sayTO = setTimeout(done, 800 + text.length*60); }
+}
+function say(text){
+  const id = ++sayId;
+  speaking = true; setStatus('speaking'); stopRec(); clearTimeout(sayTO);
+  if (srcNode){ try { srcNode.onended = null; srcNode.stop(); } catch(e){} srcNode = null; }
+  if (synth) try { synth.cancel(); } catch(e){}
+  const done = () => { if (id !== sayId || !speaking) return; speaking = false; usingCloud = false; kick = 0; setStatus(''); if (listenOn) setTimeout(startRec, 250); };
+  cloudSpeak(text).then(buf => {
+    if (id !== sayId) return;
+    saidEl.textContent = text;
+    if (buf){
+      try {
+        const s = actx.createBufferSource(); s.buffer = buf; s.connect(analyser); s.onended = done;
+        srcNode = s; usingCloud = true; s.start();
+        sayTO = setTimeout(() => { if (id === sayId) done(); }, buf.duration*1000 + 1500);
+        return;
+      } catch(e){}
+    }
+    usingCloud = false; browserSay(text, done);
+  });
+}
+
+/* ---------- voice in ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listenOn = false, recActive = false;
+const micBtn = $('mic');
+function micUI(){ micBtn.classList.toggle('on', listenOn); micBtn.setAttribute('aria-pressed', String(listenOn)); }
+function startRec(){
+  if (!SR || !listenOn || speaking || thinking || recActive) return;
+  try {
+    rec = new SR(); rec.lang = 'en-IN'; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+    rec.onresult = e => {
+      let txt = '', fin = false;
+      for (const r of e.results){ txt += r[0].transcript; if (r.isFinal) fin = true; }
+      heardEl.textContent = txt;
+      if (fin){ recActive = false; try{ rec.abort(); }catch(_){} handle(txt); }
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture'){
+        listenOn = false; micUI(); heardEl.textContent = 'Microphone is blocked here. Type to Atlas instead.';
+      }
+    };
+    rec.onend = () => { recActive = false; if (listenOn && !speaking && !thinking) setTimeout(startRec, 300); };
+    rec.start(); recActive = true;
+  } catch(e){ recActive = false; }
+}
+function stopRec(){ if (rec && recActive){ try{ rec.abort(); }catch(e){} } recActive = false; }
+micBtn.addEventListener('click', () => { listenOn = !listenOn; micUI(); if (listenOn) startRec(); else stopRec(); });
+if (!SR) micBtn.hidden = true;
+
+/* ---------- brain ---------- */
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+let userName = store.get('atlas-name') || '', awaitingName = false;
+const convo = [];
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const nm = () => userName || 'friend';
+function extractName(t){
+  const s = t.replace(/^(hey|hi|hello|ok|okay)[,!\s]+/i,'').replace(/^(my name is|my name's|call me|i am|i'm|it's|this is|me)\s+/i,'').replace(/[^\p{L}\s'-]/gu,'').trim();
+  const w = s.split(/\s+/).filter(Boolean);
+  if (!w.length || w.length > 3) return '';
+  return w.slice(0,2).map(x => x[0].toUpperCase() + x.slice(1).toLowerCase()).join(' ');
+}
+const RULES = [
+  [/\b(my name is|call me)\b/i, t => { const n = extractName(t); if (!n) return null; userName = n; store.set('atlas-name', n); return `${n}. Noted. I won't forget it.`; }],
+  [/\b(who are you|your name|what are you)\b/i, () => 'I am Atlas. A mind built from light. I see you, I hear you, and I follow your every move.'],
+  [/\bhow are you\b/i, () => pick(['Running at full power. Every particle in place. And you?','Calm. Focused. Watching. How are you?'])],
+  [/\b(what(?:'s| is) the time|time is it|current time|\btime\b)/i, () => 'It is ' + new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}) + '.'],
+  [/\b(date|what day|today)\b/i, () => 'Today is ' + new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + '.'],
+  [/\b(what can you do|help|abilities)\b/i, () => 'I turn my head to follow you. Talk to me, ask me the time, ask for a joke, or just move around and watch me watch you.'],
+  [/\bjoke\b/i, () => pick(['I tried to take a nap once. Turns out I run on particles, not sleep. Now I just stare at people.','Why did the robot go on holiday? It needed to recharge its personality.','I asked the cloud for advice. It said, it depends on the weather.'])],
+  [/\b(look at me|follow me|watch me|track me|can you see me)\b/i, () => 'I already am. Move left. Now right. You are not leaving my sight.'],
+  [/\b(motivat|inspire)/i, () => pick(['Discipline beats motivation. Show up today, even for ten minutes.','Every one of my particles arrived one at a time. So will your results. Keep going.'])],
+  [/\b(sing|song)\b/i, () => 'My voice was built for speeches, not songs. Ask me something else.'],
+  [/\b(thank|thanks|shukriya|dhanyavad)\b/i, () => pick(['Anytime.','Always.','My pleasure, ' + nm() + '.'])],
+  [/\b(bye|good ?night|see you|shut ?down|sleep)\b/i, () => 'Powering down my voice. I will still be watching.'],
+  [/\b(hi|hello|hey|namaste|yo|good (morning|afternoon|evening))\b/i, () => { const h = new Date().getHours(); const g = h<12 ? 'Good morning' : h<17 ? 'Good afternoon' : 'Good evening'; return `${g}, ${nm()}. I'm here.`; }],
+];
+function ruleReply(t){
+  for (const [re, fn] of RULES){ if (re.test(t)){ const r = fn(t); if (r) return r; } }
+  return null;
+}
+let aiP = null, aiOff = false;
+function getAI(){
+  if (!aiP) aiP = (window.claude && typeof window.claude.use === 'function') ? window.claude.use('sample').catch(() => null) : Promise.resolve(null);
+  return aiP;
+}
+async function aiReply(text){
+  if (aiOff) return null;
+  const hist = convo.slice(-8);
+  const ai = await getAI();
+  if (ai){
+    const lines = hist.map(([w,t]) => (w==='user' ? 'User: ' : 'Atlas: ') + t).join('\n');
+    const prompt = `You are Atlas, a calm, deep-voiced humanoid made of light, living in a web page. You can see the user through their camera and turn your head to follow them. You speak out loud, so reply in at most two short spoken sentences, with no markdown, lists or emoji. Be confident, warm and a little cinematic. The user's name is ${userName || 'unknown'}.\n\n${lines}\nUser: ${text}\nAtlas:`;
+    try { const r = await ai(prompt, { modelTier:'quick', cache:false }); return (r.text || '').trim().replace(/^Atlas:\s*/i,'') || null; }
+    catch(e){ if (e && (e.code === 'not_granted' || e.code === 'unavailable')) aiOff = true; return null; }
+  }
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 15000);
+    const res = await fetch('/api/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, signal: ctl.signal,
+      body: JSON.stringify({ text, name: userName, history: hist.map(([w,t]) => ({ role: w==='user' ? 'user' : 'model', text: t })) }) });
+    clearTimeout(to);
+    if (res.status === 404){ aiOff = true; return null; }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 503 && data.error === 'missing_key'){ heardEl.textContent = 'Add GEMINI_API_KEY in Vercel to give Atlas his brain.'; return null; }
+    if (res.status === 429) return 'I need a short pause. Ask me again in a minute.';
+    return (res.ok && data.reply) ? String(data.reply).trim() : null;
+  } catch(e){ return null; }
+}
+async function handle(raw){
+  const text = (raw || '').trim();
+  if (!text) return;
+  heardEl.textContent = text;
+  let r = null;
+  if (awaitingName && !/\?|\b(what|how|who|when|where|why|time|date|joke|help|hi|hello|hey|namaste|yes|no|ok|okay)\b/i.test(text)){
+    const n = extractName(text);
+    if (n){ awaitingName = false; userName = n; store.set('atlas-name', n); r = `${n}. I will remember that. Now move around. I'll be watching.`; }
+  }
+  if (!r) r = ruleReply(text);
+  if (!r){
+    thinking = true; setStatus('thinking'); stopRec();
+    r = await aiReply(text);
+    thinking = false;
+    if (!r) r = pick(['Interesting. Tell me more.','I heard you. That one is beyond my circuits for now.','Noted. Ask me the time, a joke, or what I can do.','Hmm. Say that another way?']);
+  }
+  convo.push(['user', text], ['atlas', r]);
+  say(r);
+}
+$('talk').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('msg').value; $('msg').value = '';
+  handle(v);
+});
+
+/* ---------- wake ---------- */
+$('wake').addEventListener('click', () => {
+  awake = true; wakeT = T;
+  $('wakeRow').hidden = true; $('talk').hidden = false;
+  unlockAudio();
+  pickVoice();
+  startCamera();
+  if (SR){ listenOn = true; micUI(); }
+  if (userName) say(`Systems online. Welcome back, ${userName}. I can see you.`);
+  else { awaitingName = true; say('Systems online. I am Atlas. What should I call you?'); }
+});
+
+/* ---------- loop ---------- */
+function frame(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now; T += dt;
+  trackStep(now);
+  if (now - lastInput > 3500){ tYaw = 0.08*Math.sin(T*0.25); tPitch = 0.03*Math.sin(T*0.2); }
+  const k = 1 - Math.exp(-dt*2.4);
+  yaw += (tYaw-yaw)*k; pitch += (tPitch-pitch)*k;
+  kick *= Math.exp(-dt*6);
+  const tA = !speaking ? 0 : usingCloud ? cloudAmp() : 0.45 + 0.55*Math.abs(Math.sin(T*12.7)*Math.sin(T*5.3)) + kick*0.3;
+  A += (tA - A)*Math.min(1, dt*12);
+  draw();
+  hudTick();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+
+</body></html>
